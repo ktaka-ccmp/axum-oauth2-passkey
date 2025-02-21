@@ -1,23 +1,17 @@
 [package]
-name = "demo-integration"
+name = "demo-oauth2"
 version = { workspace = true }
 edition = { workspace = true }
 
 [dependencies]
 askama = { version = "0.12.1", features = ["serde-json"] }
+axum = { version = "0.8", features = ["macros"] }
 axum-server = { version = "0.7.1", features = ["tls-rustls"] }
 dotenv = "0.15.0"
 http = "1.2.0"
+tokio = { version = "1.43.0", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 
 liboauth2 = { workspace = true }
 libsession = { workspace = true }
-libpasskey = { workspace = true }
-
-axum = { workspace = true }
-tokio = { workspace = true }
-rustls = { workspace = true }
-axum-extra = { workspace = true }
-chrono = { workspace = true }
-serde_json = "1.0.139"

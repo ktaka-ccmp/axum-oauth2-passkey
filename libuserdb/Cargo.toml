@@ -1,0 +1,20 @@
+[package]
+name = "libuserdb"
+version = "0.1.0"
+edition = "2021"
+description = "User data management library for OAuth2 applications"
+license = "MIT"
+
+[dependencies]
+async-trait = "0.1.86"
+chrono = { version = "0.4", features = ["serde"] }
+dotenv = "0.15"
+redis = { version = "0.29.0", features = ["tokio-comp", "connection-manager"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+tokio = { version = "1.43", features = ["sync"] }
+uuid = { version = "1.14", features = ["v4"] }
+
+[dev-dependencies]
+tokio = { version = "1.43", features = ["full"] }

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Protected Area</title>
+    <style>
+        .user-info {
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+        }
+        .user-info dt {
+            font-weight: bold;
+            margin-top: 0.5rem;
+        }
+        .user-info dd {
+            margin-left: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome to the Protected Area</h1>
+    <p>Hello, {{ user.name }}! You've successfully authenticated.</p>
+    
+    <div class="user-info">
+        <h2>Your Profile Information:</h2>
+        <dl>
+            
+            <dt>Picture URL</dt>
+            <dd>
+            {% if user.picture.is_some() %}
+                <img src="{{ user.picture.as_ref().unwrap() }}" alt="Profile picture" style="max-width: 100px; border-radius: 50%;">
+            {% else %}
+            {% endif %}
+            </dd>
+        </dl>
+    </div>
+
+    <p><a href="{{ auth_route_prefix }}/logout">Logout</a></p>
+</body>
+</html>

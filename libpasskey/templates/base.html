@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}Passkey Demo{% endblock %}</title>
+    <script>
+        // Base64 utility functions
+        function arrayBufferToBase64URL(buffer) {
+            if (!buffer) return null;
+            const bytes = new Uint8Array(buffer);
+            let str = '';
+            for (const byte of bytes) {
+                str += String.fromCharCode(byte);
+            }
+            return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        }
+
+        function base64URLToUint8Array(base64URL) {
+            if (!base64URL) return null;
+            const padding = '='.repeat((4 - base64URL.length % 4) % 4);
+            const base64 = base64URL.replace(/-/g, '+').replace(/_/g, '/') + padding;
+            const rawData = atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        // Authentication functions
+        async function startAuthentication(withUsername = false) {
+            const authStatus = document.getElementById("auth-status");
+            const authActions = document.getElementById("auth-actions");
+
+            try {
+                let username = null;
+                if (withUsername) {
+                    const usernameInput = document.getElementById("username-input");
+                    username = usernameInput.value.trim();
+                    if (!username) {
+                        alert("Please enter a username");
+                        return;
+                    }
+                }
+
+                const startResponse = await fetch('{{passkey_route_prefix}}/auth/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: username ? JSON.stringify(username) : "{}"
+                });
+
+                const options = await startResponse.json();
+                console.log('Raw Authentication options:', options);
+
+                // Convert base64url strings
+                options.challenge = base64URLToUint8Array(options.challenge);
+                if (options.allowCredentials && Array.isArray(options.allowCredentials)) {
+                    console.log('Raw credentials:', options.allowCredentials);
+                    options.allowCredentials = options.allowCredentials.map(credential => ({
+                        type: 'public-key',  // Required by WebAuthn
+                        id: new Uint8Array(credential.id),
+                        transports: credential.transports  // Optional
+                    }));
+                    console.log('Processed credentials:', options.allowCredentials);
+                } else {
+                    options.allowCredentials = [];
+                }
+                console.log('Processed Authentication options:', options);
+
+                // options.rpId = "amazon.co.jp"
+
+                const credential = await navigator.credentials.get({
+                    publicKey: options
+                });
+
+                console.log('Authentication credential:', credential);
+
+                const authResponse = {
+                    auth_id: options.authId,
+                    id: credential.id,
+                    raw_id: arrayBufferToBase64URL(credential.rawId),
+                    type: credential.type,
+                    authenticator_attachment: credential.authenticatorAttachment,
+                    response: {
+                        authenticator_data: arrayBufferToBase64URL(credential.response.authenticatorData),
+                        client_data_json: arrayBufferToBase64URL(credential.response.clientDataJSON),
+                        signature: arrayBufferToBase64URL(credential.response.signature),
+                        user_handle: arrayBufferToBase64URL(credential.response.userHandle)
+                    },
+                };
+
+                console.log('Authentication response:', authResponse);
+
+                const verifyResponse = await fetch('{{passkey_route_prefix}}/auth/finish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(authResponse)
+                });
+
+                if (verifyResponse.ok) {
+                    // authStatus.textContent = "Welcome back!";
+                    verifyResponse.text().then(function(text) {
+                        authStatus.textContent = `Welcome back ${text} !`;
+                    });
+                    authStatus.style.display = "block";
+                    // authActions.style.display = "none";
+                } else {
+                    throw new Error('Server verification failed');
+                }
+            } catch (error) {
+                console.error('Error during authentication:', error);
+                alert('Authentication failed: ' + error.message);
+            }
+        }
+
+        async function startRegistration() {
+            const username = document.getElementById('username').value;
+            if (!username) {
+                alert('Please enter a username');
+                return;
+            }
+
+            try {
+                const startResponse = await fetch('{{passkey_route_prefix}}/register/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(username)
+                });
+
+                const options = await startResponse.json();
+                console.log('Registration options:', options);
+
+                // Convert base64url strings to Uint8Array
+                let userHandle = options.user.id;
+                options.challenge = base64URLToUint8Array(options.challenge);
+                options.user.id = new TextEncoder().encode(options.user.id);
+
+                console.log('Registration options:', options);
+                console.log('Registration user handle:', userHandle);
+
+                const credential = await navigator.credentials.create({
+                    publicKey: options
+                });
+
+                // console.log('Registration credential:', credential);
+                // console.log('Registration credential response clientDataJSON:', credential.response.clientDataJSON);
+
+                const credentialResponse = {
+                    id: credential.id,
+                    raw_id: arrayBufferToBase64URL(credential.rawId),
+                    type: credential.type,
+                    response: {
+                        attestation_object: arrayBufferToBase64URL(credential.response.attestationObject),
+                        client_data_json: arrayBufferToBase64URL(credential.response.clientDataJSON)
+                    },
+                    user_handle: userHandle,
+                    // username: username
+                };
+
+                console.log('Registration response:', credentialResponse);
+
+                const finishResponse = await fetch('{{passkey_route_prefix}}/register/finish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(credentialResponse)
+                });
+
+                if (finishResponse.ok) {
+                    location.reload(); // Refresh to show authenticated state
+                } else {
+                    throw new Error('Registration verification failed');
+                }
+            } catch (error) {
+                console.error('Error during registration:', error);
+                alert('Registration failed: ' + error.message);
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

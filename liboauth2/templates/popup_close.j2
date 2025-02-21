@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-closing Page</title>
+    <script>
+        window.onload = function() {
+            if (window.opener) {
+                window.opener.postMessage('auth_complete', window.location.origin);
+            }
+            setTimeout(function() {
+                window.close();
+            }, 500);
+        }
+    </script>
+</head>
+<body>
+    <h2>Login Successful</h2>
+    <h2>This window will close automatically within a few seconds...</h2>
+</body>
+</html>

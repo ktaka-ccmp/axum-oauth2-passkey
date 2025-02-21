@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div
+    id="auth-header"
+    style="padding: 10px; border-bottom: 1px solid #eee; margin-bottom: 20px"
+>
+    <div id="passkey-status" style="display: none">
+        <!-- Will show greeting when authenticated -->
+    </div>
+    <h1>
+        <div id="auth-status" style="display: none">
+            <!-- Will show greeting when authenticated -->
+        </div>
+    </h1>
+    <div id="auth-actions" style="display: block">
+        <!-- Will show auth buttons based on state -->
+        <button onclick="startAuthentication()" class="auth-button">
+            Sign in with Passkey
+        </button>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <input
+                type="text"
+                id="username-input"
+                placeholder="Enter username"
+                style="padding: 5px; border: 1px solid #ccc; border-radius: 4px;"
+            >
+            <button
+                onclick="startAuthentication(true)"
+                class="auth-button"
+            >
+                Sign in with Username
+            </button>
+        </div>
+    </div>
+    <div id="auth-register" style="display: block">
+        <!-- Will show auth buttons based on state -->
+        <button onclick="showRegistrationModal()" class="auth-button">
+            Register New Passkey
+        </button>
+    </div>
+</div>
+
+<div id="main-content">
+    <h1>Hello, World!</h1>
+    <p>Welcome to our site. This is the main content that's always visible.</p>
+</div>
+
+<script>
+    async function checkAuthOptions() {
+        const authStatus = document.getElementById("auth-status");
+        const authActions = document.getElementById("auth-actions");
+
+        try {
+            const startResponse = await fetch("{{passkey_route_prefix}}/auth/start", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+
+            const options = await startResponse.json();
+            console.log("Authentication options:", options);
+
+            // Convert base64url strings
+            options.challenge = base64URLToUint8Array(options.challenge);
+            options.allowCredentials = options.allowCredentials.map(
+                (credential) => ({
+                    ...credential,
+                    id: base64URLToUint8Array(credential.id),
+                })
+            );
+
+            // Check if authentication options are available
+            if (options.challenge && options.allowCredentials.length > 0) {
+                authActions.style.display = "block";
+                authActions.innerHTML = `
+                <button onclick="showRegistrationModal()" class="auth-button">Register New Passkey</button>
+               <button onclick="startAuthentication()" class="auth-button">Sign in with Passkey</button>
+           `;
+            } else {
+                authActions.style.display = "block";
+                authActions.innerHTML = `
+                <button onclick="showRegistrationModal()" class="auth-button">Register New Passkey</button>
+            `;
+            }
+        } catch (error) {
+            console.error("Error during authentication:", error);
+            authActions.style.display = "block";
+        }
+    }
+
+    function showRegistrationModal() {
+        const modal = document.createElement("div");
+        modal.innerHTML = `
+        <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; padding: 20px; border-radius: 8px; max-width: 400px;">
+                <h2>Register</h2>
+                <div style="margin: 20px 0;">
+                    <label for="username">Username:</label>
+                    <input type="text" id="username" style="margin-left: 10px;">
+                </div>
+                <div style="text-align: right;">
+                    <button onclick="this.parentElement.parentElement.parentElement.remove()" style="margin-right: 10px;">Cancel</button>
+                    <button onclick="startRegistration()">Register</button>
+                </div>
+            </div>
+        </div>
+    `;
+        document.body.appendChild(modal);
+    }
+
+    async function CheckPasskey() {
+        const status = document.getElementById("passkey-status");
+        try {
+            console.log("Starting manual passkey check...");
+            const credential = await navigator.credentials.get({
+                publicKey: {
+                    challenge: crypto.getRandomValues(new Uint8Array(32)),
+                    rpId: location.hostname,
+                    timeout: 60000,
+                    allowCredentials: [], // Empty array to check for any credential
+                },
+            });
+            console.log("Passkey found:", credential);
+            status.style.display = "block";
+            status.innerHTML = "✅ Passkey found for this site";
+        } catch (error) {
+            console.log("No passkey available:", error);
+            status.style.display = "block";
+            status.innerHTML = "❌ No passkey found for this site";
+        }
+    }
+
+    // Start the process when page loads
+    // document.addEventListener('DOMContentLoaded', CheckPasskey);
+</script>
+
+{% endblock %}

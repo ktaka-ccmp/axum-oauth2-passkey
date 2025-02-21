@@ -1,0 +1,13 @@
+[package]
+name = "demo-passkey"
+version = { workspace = true }
+edition = { workspace = true }
+
+[dependencies]
+askama = "0.12.1"
+axum = { workspace = true }
+axum-core = { workspace = true }
+tokio = { workspace = true }
+
+libpasskey.workspace = true
+dotenv = "0.15.0"
