@@ -3,6 +3,7 @@ use ciborium::value::{Integer, Value as CborValue};
 use std::time::SystemTime;
 
 use libsession::User as SessionUser;
+use libstorage::GENERIC_CACHE_STORE;
 
 use super::types::{
     AttestationObject, AuthenticatorSelection, PubKeyCredParam, RegisterCredential,
@@ -10,14 +11,13 @@ use super::types::{
 };
 use crate::common::{base64url_decode, generate_challenge};
 use crate::config::{
-    ORIGIN, PASSKEY_AUTHENTICATOR_ATTACHMENT, PASSKEY_CACHE_STORE, PASSKEY_CHALLENGE_STORE,
-    PASSKEY_CHALLENGE_TIMEOUT, PASSKEY_CREDENTIAL_STORE, PASSKEY_REQUIRE_RESIDENT_KEY,
-    PASSKEY_RESIDENT_KEY, PASSKEY_RP_ID, PASSKEY_RP_NAME, PASSKEY_TIMEOUT,
-    PASSKEY_USER_VERIFICATION,
+    ORIGIN, PASSKEY_AUTHENTICATOR_ATTACHMENT, PASSKEY_CHALLENGE_TIMEOUT,
+    PASSKEY_CREDENTIAL_STORE, PASSKEY_REQUIRE_RESIDENT_KEY, PASSKEY_RESIDENT_KEY, PASSKEY_RP_ID,
+    PASSKEY_RP_NAME, PASSKEY_TIMEOUT, PASSKEY_USER_VERIFICATION,
 };
 use crate::errors::PasskeyError;
 use crate::types::{
-    CacheData, EmailUserId, PublicKeyCredentialUserEntity, SessionInfo, StoredChallenge,
+    EmailUserId, PublicKeyCredentialUserEntity, SessionInfo, StoredChallenge,
     StoredCredential, UserIdCredentialIdStr,
 };
 
@@ -44,15 +44,15 @@ pub async fn start_registration_with_auth_user(
         display_name: user.name.clone(),
     };
 
-    // Wrap user info in session info to match the cache store data type
-    let session_info = CacheData::SessionInfo(SessionInfo { user });
+    let session_info = SessionInfo { user };
 
-    PASSKEY_CACHE_STORE
+    GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store_mut()
-        .put(&user_info.user_handle, session_info)
-        .await?;
+        .put("session_info", &user_info.user_handle, session_info.into())
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     #[cfg(debug_assertions)]
     println!("User info: {:#?}", user_info);
@@ -76,12 +76,13 @@ pub async fn create_registration_options(
         ttl: *PASSKEY_CHALLENGE_TIMEOUT as u64,
     };
 
-    PASSKEY_CHALLENGE_STORE
+    GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store_mut()
-        .store_challenge(user_info.user_handle.clone(), stored_challenge)
-        .await?;
+        .put("regi_challenge", &user_info.user_handle, stored_challenge.into())
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     let authenticator_selection = AuthenticatorSelection {
         authenticator_attachment: PASSKEY_AUTHENTICATOR_ATTACHMENT.to_string(),
@@ -130,24 +131,24 @@ pub async fn finish_registration_with_auth_user(
             "User handle is missing".to_string(),
         ))?;
 
-    let session_info = match PASSKEY_CACHE_STORE
+    let session_info: SessionInfo = GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store()
-        .get(user_handle)
-        .await?
-    {
-        Some(CacheData::SessionInfo(info)) => Ok(info),
-        _ => Err(PasskeyError::Format("Invalid session type".to_string())),
-    }?;
+        .get("session_info", user_handle)
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?
+        .ok_or(PasskeyError::NotFound("Session not found".to_string()))?
+        .try_into()?;
 
     // Delete the session info from the store
-    PASSKEY_CACHE_STORE
+    GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store_mut()
-        .remove(user_handle)
-        .await?;
+        .remove("session_info", user_handle)
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     // Verify the user is the same as the one in the cache store i.e. used to start the registration
     if user.id != session_info.user.id {
@@ -156,36 +157,36 @@ pub async fn finish_registration_with_auth_user(
 
     finish_registration(&reg_data).await?;
 
-    // Store email vs credential ID etc. in CacheStore
-    PASSKEY_CACHE_STORE
+    // Store email to user_id mapping in GENERIC_CACHE_STORE
+    let email_user_id = EmailUserId {
+        email: user.email.clone(),
+        user_id: user.id.clone(),
+    };
+
+    GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store_mut()
-        .put(
-            &user.email.clone(),
-            CacheData::EmailUserId(EmailUserId {
-                email: user.email,
-                user_id: user.id.clone(),
-            }),
-        )
-        .await?;
+        .put("email", &user.email, email_user_id.into())
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     let credential_id = base64url_decode(&reg_data.raw_id)
         .map_err(|e| PasskeyError::Format(format!("Failed to decode credential ID: {}", e)))?;
 
-    PASSKEY_CACHE_STORE
+    let credential_id_str = UserIdCredentialIdStr {
+        user_id: user.id.clone(),
+        credential_id_str: reg_data.raw_id,
+        credential_id,
+    };
+
+    GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store_mut()
-        .put(
-            &user.id.clone(),
-            CacheData::UserIdCredentialIdStr(UserIdCredentialIdStr {
-                user_id: user.id,
-                credential_id_str: reg_data.raw_id,
-                credential_id,
-            }),
-        )
-        .await?;
+        .put("uid2cid_str", &user.id, credential_id_str.into())
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     Ok("Registration successful".to_string())
 }
@@ -208,15 +209,15 @@ pub async fn finish_registration(reg_data: &RegisterCredential) -> Result<String
             "User handle is missing".to_string(),
         ))?;
 
-    let stored_challenge = PASSKEY_CHALLENGE_STORE
+    let stored_challenge: StoredChallenge = GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store()
-        .get_challenge(user_handle)
-        .await?
-        .ok_or(PasskeyError::Storage(
-            "No challenge found for this user".to_string(),
-        ))?;
+        .get("regi_challenge", user_handle)
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?
+        .ok_or_else(|| PasskeyError::NotFound("Challenge not found".to_string()))?
+        .try_into()?;
 
     let stored_user = stored_challenge.user.clone();
 
@@ -239,12 +240,13 @@ pub async fn finish_registration(reg_data: &RegisterCredential) -> Result<String
         .await?;
 
     // Remove used challenge
-    PASSKEY_CHALLENGE_STORE
+    GENERIC_CACHE_STORE
         .lock()
         .await
         .get_store_mut()
-        .remove_challenge(user_handle)
-        .await?;
+        .remove("regi_challenge", user_handle)
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     Ok("Registration successful".to_string())
 }
@@ -473,15 +475,15 @@ async fn verify_client_data(reg_data: &RegisterCredential) -> Result<(), Passkey
             "User handle is missing".to_string(),
         ))?;
 
-    let challenge_store = PASSKEY_CHALLENGE_STORE.lock().await;
-
-    let stored_challenge = challenge_store
+    let stored_challenge: StoredChallenge = GENERIC_CACHE_STORE
+        .lock()
+        .await
         .get_store()
-        .get_challenge(user_handle)
-        .await?
-        .ok_or(PasskeyError::Storage(
-            "No challenge found for this user".to_string(),
-        ))?;
+        .get("regi_challenge", user_handle)
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?
+        .ok_or_else(|| PasskeyError::NotFound("No challenge found for this user".to_string()))?
+        .try_into()?;
 
     // Validate challenge TTL
     let now = SystemTime::now()

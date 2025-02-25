@@ -33,3 +33,4 @@ x509-parser = { version = "0.17.0", features = ["validate", "verify"] }
 tracing = "0.1.41"
 
 libsession = { workspace = true }
+libstorage = { workspace = true }

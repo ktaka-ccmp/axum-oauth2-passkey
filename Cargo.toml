@@ -8,6 +8,7 @@ members = [
     "libpasskey",
     "libuserdb",
     "libaxum",
+    "libstorage",
 ]
 
 resolver = "2"
@@ -22,6 +23,7 @@ libpasskey = { path = "./libpasskey" }
 libsession = { path = "./libsession" }
 libuserdb = { path = "./libuserdb" }
 libaxum = { path = "./libaxum" }
+libstorage = { path = "./libstorage" }
 
 axum = { version = "0.8", features = ["http2", "macros", "multipart"] }
 tokio = { version = "1.43", features = ["bytes", "fs", "io-std", "macros", "parking_lot", "rt-multi-thread", "signal-hook-registry", "socket2", "sync", "time", "tracing"] }

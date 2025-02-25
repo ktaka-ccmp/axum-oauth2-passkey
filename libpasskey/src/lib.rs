@@ -28,8 +28,15 @@ pub async fn init() -> Result<(), errors::PasskeyError> {
     // Validate required environment variables early
     let _ = *config::PASSKEY_RP_ID;
 
+    // Initialize libstorage's cache store first
+    libstorage::init_cache_store()
+        .await
+        .map_err(|e| errors::PasskeyError::Storage(e.to_string()))?;
+
+    // Initialize passkey's stores
     config::init_challenge_store().await?;
     config::init_credential_store().await?;
     config::init_cache_store().await?;
+
     Ok(())
 }
