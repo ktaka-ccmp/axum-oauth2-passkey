@@ -24,19 +24,25 @@ pub use passkey::{
 
 pub use common::email_to_user_id;
 
-pub async fn init() -> Result<(), errors::PasskeyError> {
+use errors::PasskeyError;
+use storage::PasskeyStore;
+
+pub async fn init() -> Result<(), PasskeyError> {
     // Validate required environment variables early
     let _ = *config::PASSKEY_RP_ID;
 
     // Initialize libstorage's cache store first
     libstorage::init_cache_store()
         .await
-        .map_err(|e| errors::PasskeyError::Storage(e.to_string()))?;
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     // Initialize passkey's stores
-    config::init_challenge_store().await?;
-    config::init_credential_store().await?;
-    config::init_cache_store().await?;
+    // config::init_challenge_store().await?;
+    // config::init_credential_store().await?;
+    // config::init_cache_store().await?;
+
+    // Initialize the passkey store
+    PasskeyStore::init().await?;
 
     Ok(())
 }

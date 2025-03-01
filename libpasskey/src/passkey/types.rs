@@ -105,9 +105,25 @@ pub(super) struct ParsedClientData {
     pub(super) raw_data: Vec<u8>,
 }
 
+/// AuthenticatorData structure as defined in WebAuthn spec Level 2
+/// https://www.w3.org/TR/webauthn-2/#sctn-authenticator-data
 #[derive(Debug)]
 pub(super) struct AuthenticatorData {
+    /// SHA-256 hash of the RP ID (32 bytes)
     pub(super) rp_id_hash: Vec<u8>,
+
+    /// Flags (1 byte) indicating various attributes:
+    /// - Bit 0: User Present (UP)
+    /// - Bit 2: User Verified (UV)
+    /// - Bit 3: Backup Eligibility (BE) - Indicates if credential is discoverable
+    /// - Bit 4: Backup State (BS)
+    /// - Bit 6: Attested Credential Data Present (AT)
+    /// - Bit 7: Extension Data Present (ED)
     pub(super) flags: u8,
+
+    /// Signature counter (4 bytes), 32-bit unsigned big-endian integer
+    pub(super) counter: u32,
+
+    /// Raw authenticator data for verification
     pub(super) raw_data: Vec<u8>,
 }

@@ -11,11 +11,11 @@ use super::types::{
 
 use crate::common::{base64url_decode, email_to_user_id, generate_challenge, uid2cid_str_vec};
 use crate::config::{
-    ORIGIN, PASSKEY_CHALLENGE_TIMEOUT, PASSKEY_CREDENTIAL_STORE, PASSKEY_RP_ID, PASSKEY_TIMEOUT,
-    PASSKEY_USER_VERIFICATION,
+    ORIGIN, PASSKEY_CHALLENGE_TIMEOUT, PASSKEY_RP_ID, PASSKEY_TIMEOUT, PASSKEY_USER_VERIFICATION,
 };
 use crate::errors::PasskeyError;
-use crate::types::{PublicKeyCredentialUserEntity, StoredChallenge};
+use crate::storage::PasskeyStore;
+use crate::types::{PublicKeyCredentialUserEntity, StoredChallenge, StoredCredential};
 
 pub async fn start_authentication(
     username: Option<String>,
@@ -88,9 +88,6 @@ pub async fn verify_authentication(
     );
 
     // Get stored challenge and verify auth
-    let credential_store = PASSKEY_CREDENTIAL_STORE.lock().await;
-
-    // let mut store = state.store.lock().await;
     let stored_challenge: StoredChallenge = GENERIC_CACHE_STORE
         .lock()
         .await
@@ -113,7 +110,9 @@ pub async fn verify_authentication(
             "Challenge expired after {} seconds (timeout: {})",
             age, timeout
         );
-        return Err(PasskeyError::Authentication("Challenge has expired".into()));
+        return Err(PasskeyError::Authentication(
+            "Challenge has expired. For more details, run with RUST_LOG=debug".into(),
+        ));
     }
 
     #[cfg(debug_assertions)]
@@ -148,45 +147,104 @@ pub async fn verify_authentication(
     auth_data.verify()?;
 
     // Get credential then public key
-    let credential = credential_store
-        .get_store()
-        .get_credential(&auth_response.id)
+    let stored_credential = PasskeyStore::get_credential(&auth_response.id)
         .await?
-        .ok_or(PasskeyError::Authentication("Unknown credential".into()))?;
+        .ok_or_else(|| PasskeyError::NotFound("Credential not found".into()))?;
 
     #[cfg(debug_assertions)]
-    println!("Found credential: {:?}", credential);
+    println!("Found credential: {:?}", stored_credential);
 
+    // Verify user handle based on credential type
     let user_handle = auth_response
         .response
         .user_handle
         .as_ref()
-        .and_then(|handle| {
+        .map(|handle| {
             base64url_decode(handle)
                 .ok()
                 .and_then(|decoded| String::from_utf8(decoded).ok())
         })
-        .unwrap_or("default".to_string());
+        .flatten();
 
-    #[cfg(debug_assertions)]
-    println!("user_info stored in credential: {:?}", &credential.user);
-    #[cfg(debug_assertions)]
-    println!("user_handle received from client: {:?}", &user_handle);
+    // Check if credential is discoverable
+    let is_discoverable = auth_data.is_discoverable();
+
     #[cfg(debug_assertions)]
     println!(
-        "user_handle before decoding: {:?}",
-        auth_response.response.user_handle
+        "Credential properties:\n\
+         - Type: {}\n\
+         - User present: {}\n\
+         - User verified: {}\n\
+         - Backed up: {}",
+        if is_discoverable {
+            "discoverable"
+        } else {
+            "server-side"
+        },
+        auth_data.is_user_present(),
+        auth_data.is_user_verified(),
+        auth_data.is_backed_up(),
     );
 
-    // let display_name = credential.user.display_name.as_str().to_owned();
-    let name = credential.user.name.as_str().to_owned();
+    match (
+        user_handle,
+        &stored_credential.user.user_handle,
+        is_discoverable,
+    ) {
+        (Some(handle), stored_handle, _) if handle != *stored_handle => {
+            return Err(PasskeyError::Authentication(
+                "User handle mismatch. For more details, run with RUST_LOG=debug".into(),
+            ));
+        }
+        (None, _, true) => {
+            // Discoverable credentials MUST provide a user handle
+            return Err(PasskeyError::Authentication(
+                "Missing required user handle for discoverable credential. For more details, run with RUST_LOG=debug".into(),
+            ));
+        }
+        (None, _, false) => {
+            // Non-discoverable credentials may omit the user handle
+            #[cfg(debug_assertions)]
+            println!("No user handle provided for non-discoverable credential");
+        }
+        _ => {
+            #[cfg(debug_assertions)]
+            println!("User handle verified successfully");
+        }
+    }
 
-    if credential.user.user_handle != user_handle {
-        return Err(PasskeyError::Authentication("User handle mismatch".into()));
+    // Verify the authenticator data counter
+    let auth_counter = auth_data.counter;
+    tracing::debug!(
+        "Counter verification - stored: {}, received: {}",
+        stored_credential.counter,
+        auth_counter
+    );
+
+    if auth_counter == 0 {
+        // Counter value of 0 means the authenticator doesn't support counters
+        tracing::info!("Authenticator does not support counters (received counter=0)");
+    } else if auth_counter <= stored_credential.counter {
+        // Counter value decreased or didn't change - possible cloning attack
+        tracing::warn!(
+            "Counter verification failed - stored: {}, received: {}",
+            stored_credential.counter,
+            auth_counter
+        );
+        return Err(PasskeyError::Authentication(
+            "Counter value decreased - possible credential cloning detected. For more details, run with RUST_LOG=debug".into(),
+        ));
+    } else {
+        // Counter increased as expected
+        tracing::debug!(
+            "Counter verification successful - stored: {}, received: {}",
+            stored_credential.counter,
+            auth_counter
+        );
     }
 
     let verification_algorithm = &ring::signature::ECDSA_P256_SHA256_ASN1;
-    let public_key = UnparsedPublicKey::new(verification_algorithm, &credential.public_key);
+    let public_key = UnparsedPublicKey::new(verification_algorithm, &stored_credential.public_key);
 
     // Signature
     let signature = base64url_decode(&auth_response.response.signature)
@@ -211,6 +269,13 @@ pub async fn verify_authentication(
             #[cfg(debug_assertions)]
             println!("Signature verification successful");
 
+            // Update the counter
+            PasskeyStore::update_credential_counter(
+                &auth_response.id,
+                stored_credential.counter + 1,
+            )
+            .await?;
+
             // Cleanup and return success
             GENERIC_CACHE_STORE
                 .lock()
@@ -220,17 +285,22 @@ pub async fn verify_authentication(
                 .await
                 .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
-            Ok(name)
+            Ok(stored_credential.user.name)
         }
         Err(e) => {
             #[cfg(debug_assertions)]
             println!("Signature verification failed: {:?}", e);
 
             Err(PasskeyError::Verification(
-                "Signature verification failed".into(),
+                "Signature verification failed. For more details, run with RUST_LOG=debug".into(),
             ))
         }
     }
+}
+
+pub async fn get_credential(credential_id: &str) -> Result<Option<StoredCredential>, PasskeyError> {
+    let credential = PasskeyStore::get_credential(credential_id).await?;
+    Ok(credential)
 }
 
 impl ParsedClientData {
@@ -268,7 +338,9 @@ impl ParsedClientData {
     fn verify(&self, stored_challenge: &[u8]) -> Result<(), PasskeyError> {
         // Verify challenge
         if self.challenge != stored_challenge {
-            return Err(PasskeyError::Challenge("Challenge mismatch".into()));
+            return Err(PasskeyError::Challenge(
+                "Challenge mismatch. For more details, run with RUST_LOG=debug".into(),
+            ));
         }
 
         // Verify origin
@@ -291,26 +363,81 @@ impl ParsedClientData {
     }
 }
 
+/// Flags for AuthenticatorData as defined in WebAuthn spec Level 2
+mod auth_data_flags {
+    /// User Present (UP) - Bit 0
+    pub(super) const UP: u8 = 1 << 0;
+    /// User Verified (UV) - Bit 2
+    pub(super) const UV: u8 = 1 << 2;
+    /// Backup Eligibility (BE) - Bit 3 - Indicates if credential is discoverable
+    pub(super) const BE: u8 = 1 << 3;
+    /// Backup State (BS) - Bit 4
+    pub(super) const BS: u8 = 1 << 4;
+    /// Attested Credential Data Present - Bit 6
+    pub(super) const AT: u8 = 1 << 6;
+    /// Extension Data Present - Bit 7
+    pub(super) const ED: u8 = 1 << 7;
+}
+
 impl AuthenticatorData {
+    /// Parse base64url-encoded authenticator data
+    /// Format (minimum 37 bytes):
+    /// - RP ID Hash (32 bytes)
+    /// - Flags (1 byte)
+    /// - Counter (4 bytes)
+    /// - Optional: Attested Credential Data
+    /// - Optional: Extensions
     fn from_base64(auth_data: &str) -> Result<Self, PasskeyError> {
         let data = base64url_decode(auth_data)
             .map_err(|e| PasskeyError::Format(format!("Failed to decode: {}", e)))?;
 
         if data.len() < 37 {
             return Err(PasskeyError::AuthenticatorData(
-                "Authenticator data too short".into(),
+                "Authenticator data too short. For more details, run with RUST_LOG=debug".into(),
             ));
         }
 
         Ok(Self {
             rp_id_hash: data[..32].to_vec(),
             flags: data[32],
+            counter: u32::from_be_bytes([data[33], data[34], data[35], data[36]]),
             raw_data: data,
         })
     }
 
+    /// Check if user was present during the authentication
+    fn is_user_present(&self) -> bool {
+        (self.flags & auth_data_flags::UP) != 0
+    }
+
+    /// Check if user was verified by the authenticator
+    fn is_user_verified(&self) -> bool {
+        (self.flags & auth_data_flags::UV) != 0
+    }
+
+    /// Check if this is a discoverable credential (previously known as resident key)
+    fn is_discoverable(&self) -> bool {
+        (self.flags & auth_data_flags::BE) != 0
+    }
+
+    /// Check if this credential is backed up
+    fn is_backed_up(&self) -> bool {
+        (self.flags & auth_data_flags::BS) != 0
+    }
+
+    /// Check if attested credential data is present
+    fn has_attested_credential_data(&self) -> bool {
+        (self.flags & auth_data_flags::AT) != 0
+    }
+
+    /// Check if extension data is present
+    fn has_extension_data(&self) -> bool {
+        (self.flags & auth_data_flags::ED) != 0
+    }
+
+    /// Verify the authenticator data
     fn verify(&self) -> Result<(), PasskeyError> {
-        // Verify RP ID hash
+        // Verify rpIdHash matches SHA-256 hash of rpId
         let expected_hash = digest::digest(&digest::SHA256, PASSKEY_RP_ID.as_bytes());
         if self.rp_id_hash != expected_hash.as_ref() {
             return Err(PasskeyError::AuthenticatorData(format!(
@@ -320,17 +447,15 @@ impl AuthenticatorData {
             )));
         }
 
-        // Check user presence flag
-        if self.flags & 0x01 == 0 {
-            return Err(PasskeyError::AuthenticatorData(
-                "User presence flag not set".into(),
+        // Verify user present flag
+        if !self.is_user_present() {
+            return Err(PasskeyError::Authentication(
+                "User not present. For more details, run with RUST_LOG=debug".into(),
             ));
         }
 
-        // Check user verification flag if required
-        if PASSKEY_USER_VERIFICATION.to_string().to_lowercase() == "required"
-            && self.flags & 0x04 == 0
-        {
+        // Verify user verification if required
+        if *PASSKEY_USER_VERIFICATION == "required" && !self.is_user_verified() {
             return Err(PasskeyError::AuthenticatorData(format!(
                 "User verification required but flag not set. Flags: {:02x}",
                 self.flags

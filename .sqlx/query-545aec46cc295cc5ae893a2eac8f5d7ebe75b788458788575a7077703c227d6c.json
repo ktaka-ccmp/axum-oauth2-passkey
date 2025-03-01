@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        SELECT public_key, counter, user_handle, user_name, user_display_name\n        FROM passkey_credentials\n        WHERE credential_id = ?\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "public_key",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "counter",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "user_handle",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "user_name",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "user_display_name",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "545aec46cc295cc5ae893a2eac8f5d7ebe75b788458788575a7077703c227d6c"
+}

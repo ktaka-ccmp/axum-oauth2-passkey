@@ -11,11 +11,12 @@ use super::types::{
 };
 use crate::common::{base64url_decode, generate_challenge};
 use crate::config::{
-    ORIGIN, PASSKEY_AUTHENTICATOR_ATTACHMENT, PASSKEY_CHALLENGE_TIMEOUT, PASSKEY_CREDENTIAL_STORE,
+    ORIGIN, PASSKEY_AUTHENTICATOR_ATTACHMENT, PASSKEY_CHALLENGE_TIMEOUT,
     PASSKEY_REQUIRE_RESIDENT_KEY, PASSKEY_RESIDENT_KEY, PASSKEY_RP_ID, PASSKEY_RP_NAME,
     PASSKEY_TIMEOUT, PASSKEY_USER_VERIFICATION,
 };
 use crate::errors::PasskeyError;
+use crate::storage::PasskeyStore;
 use crate::types::{
     EmailUserId, PublicKeyCredentialUserEntity, SessionInfo, StoredChallenge, StoredCredential,
     UserIdCredentialIdStr,
@@ -228,20 +229,16 @@ pub async fn finish_registration(reg_data: &RegisterCredential) -> Result<String
     // Store using base64url encoded credential_id as the key
     let credential_id_str = reg_data.raw_id.clone();
 
-    PASSKEY_CREDENTIAL_STORE
-        .lock()
+    let credential = StoredCredential {
+        credential_id,
+        public_key,
+        counter: 0,
+        user: stored_user,
+    };
+
+    PasskeyStore::store_credential(credential_id_str, credential)
         .await
-        .get_store_mut()
-        .store_credential(
-            credential_id_str,
-            StoredCredential {
-                credential_id,
-                public_key,
-                counter: 0,
-                user: stored_user,
-            },
-        )
-        .await?;
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     // Remove used challenge
     GENERIC_CACHE_STORE

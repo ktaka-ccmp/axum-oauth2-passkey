@@ -10,6 +10,6 @@ services:
       POSTGRES_PASSWORD: passkey
       POSTGRES_DB: passkey
     volumes:
-      - ./data:/var/lib/postgresql/data
+      - ./data/pgdata:/var/lib/postgresql/data
 #      - ./init.sql:/docker-entrypoint-initdb.d/index.sql
     restart: always

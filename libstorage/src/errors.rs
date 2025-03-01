@@ -5,6 +5,9 @@ pub enum StorageError {
     #[error("Configuration error: {0}")]
     Config(String),
 
+    #[error("Connection error: {0}")]
+    Connection(String),
+
     #[error("Storage error: {0}")]
     Storage(String),
 

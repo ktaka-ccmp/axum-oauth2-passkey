@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        UPDATE passkey_credentials\n        SET counter = ?, updated_at = CURRENT_TIMESTAMP\n        WHERE credential_id = ?\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "12b12264f08c220f63df5a4397df7508787c6a29e708f8ec415a3f39d9736707"
+}
