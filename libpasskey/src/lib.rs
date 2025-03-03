@@ -18,25 +18,8 @@ pub use config::PASSKEY_ROUTE_PREFIX; // Required for route configuration
 
 pub use passkey::{
     AuthenticationOptions, AuthenticatorResponse, RegisterCredential, RegistrationOptions,
-    finish_registration, finish_registration_with_auth_user, start_authentication,
-    start_registration, start_registration_with_auth_user, verify_authentication,
+    finish_authentication, finish_registration, finish_registration_with_auth_user,
+    start_authentication, start_registration, start_registration_with_auth_user,
 };
 
-pub use common::email_to_user_id;
-
-pub async fn init() -> Result<(), errors::PasskeyError> {
-    // Validate required environment variables early
-    let _ = *config::PASSKEY_RP_ID;
-
-    // Initialize libstorage's cache store first
-    libstorage::init_cache_store()
-        .await
-        .map_err(|e| errors::PasskeyError::Storage(e.to_string()))?;
-
-    // Initialize passkey's stores
-    config::init_challenge_store().await?;
-    config::init_credential_store().await?;
-    config::init_cache_store().await?;
-
-    Ok(())
-}
+pub use common::{email_to_user_id, init};

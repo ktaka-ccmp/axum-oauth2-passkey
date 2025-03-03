@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        INSERT OR REPLACE INTO passkey_credentials \n        (credential_id, public_key, counter, user_handle, user_name, user_display_name, updated_at)\n        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "0516e4a91ccf9770cce37f9b58e5d11b807ab951c845b6bb35a1e6bc0537284e"
+}

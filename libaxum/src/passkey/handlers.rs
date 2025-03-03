@@ -7,9 +7,9 @@ use axum::{
 
 use libpasskey::{
     AuthenticationOptions, AuthenticatorResponse, RegisterCredential, RegistrationOptions,
-    email_to_user_id, finish_registration, finish_registration_with_auth_user,
-    start_authentication, start_registration, start_registration_with_auth_user,
-    verify_authentication,
+    email_to_user_id, finish_authentication, finish_registration,
+    finish_registration_with_auth_user, start_authentication, start_registration,
+    start_registration_with_auth_user,
 };
 
 use libpasskey::PASSKEY_ROUTE_PREFIX;
@@ -99,7 +99,7 @@ pub(crate) async fn handle_finish_authentication(
     #[cfg(debug_assertions)]
     println!("Auth response: {:#?}", auth_response);
 
-    let name = verify_authentication(auth_response)
+    let name = finish_authentication(auth_response)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 

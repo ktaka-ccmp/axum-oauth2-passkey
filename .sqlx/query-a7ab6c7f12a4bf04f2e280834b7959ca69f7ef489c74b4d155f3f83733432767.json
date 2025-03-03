@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n        CREATE TABLE IF NOT EXISTS passkey_credentials (\n            credential_id TEXT PRIMARY KEY NOT NULL,\n            public_key BLOB NOT NULL,\n            counter INTEGER NOT NULL DEFAULT 0,\n            user_handle TEXT NOT NULL,\n            user_name TEXT NOT NULL,\n            user_display_name TEXT NOT NULL,\n            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,\n            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "a7ab6c7f12a4bf04f2e280834b7959ca69f7ef489c74b4d155f3f83733432767"
+}

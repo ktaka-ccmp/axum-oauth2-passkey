@@ -24,14 +24,12 @@ pub(super) fn verify_attestation(
     match attestation.fmt.as_str() {
         "none" => {
             // for platform authenticators
-            #[cfg(debug_assertions)]
-            println!("Using 'none' attestation format");
+            tracing::debug!("Using 'none' attestation format");
             verify_none_attestation(attestation)
         }
         "packed" => {
             // for security keys
-            #[cfg(debug_assertions)]
-            println!("Using 'packed' attestation format");
+            tracing::debug!("Using 'packed' attestation format");
             verify_packed_attestation(
                 &attestation.auth_data,
                 client_data_hash.as_ref(),
@@ -88,8 +86,7 @@ fn verify_none_attestation(attestation: &AttestationObject) -> Result<(), Passke
 
     // Extract AAGUID (starts at byte 37, 16 bytes long)
     let aaguid = &attestation.auth_data[37..53];
-    #[cfg(debug_assertions)]
-    println!("AAGUID: {:?}", aaguid);
+    tracing::debug!("AAGUID: {:?}", aaguid);
 
     // Verify credential public key format
     let mut pos = 55; // After AAGUID and 2-byte credential ID length
@@ -157,8 +154,7 @@ fn verify_packed_attestation(
     match (x5c_opt, ecdaa_key_id) {
         (Some(x5c), None) => {
             // Full attestation with certificate chain
-            #[cfg(debug_assertions)]
-            println!("Full attestation with certificate chain");
+            tracing::debug!("Full attestation with certificate chain");
 
             let attestn_cert_bytes = &x5c[0];
             let attestn_cert =
@@ -195,8 +191,7 @@ fn verify_packed_attestation(
             ));
         }
         (None, None) => {
-            #[cfg(debug_assertions)]
-            println!("Self attestation");
+            tracing::debug!("Self attestation");
             verify_self_attestation(auth_data, &signed_data, &sig)?;
         }
         (Some(_), Some(_)) => {

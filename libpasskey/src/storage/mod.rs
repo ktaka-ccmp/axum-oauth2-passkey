@@ -1,12 +1,3 @@
-mod memory;
-mod postgres;
-mod redis;
-mod sqlite;
-mod traits;
-mod types;
+mod generic_data_store;
 
-pub(crate) use traits::{CacheStore, ChallengeStore, CredentialStore};
-pub(crate) use types::{
-    CacheStoreType, ChallengeStoreType, CredentialStoreType, InMemoryCacheStore,
-    InMemoryChallengeStore, InMemoryCredentialStore,
-};
+pub use generic_data_store::PasskeyStore;

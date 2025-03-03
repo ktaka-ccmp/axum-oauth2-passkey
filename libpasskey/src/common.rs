@@ -4,7 +4,22 @@ use ring::rand::SecureRandom;
 use libstorage::GENERIC_CACHE_STORE;
 
 use crate::errors::PasskeyError;
+use crate::storage::PasskeyStore;
 use crate::types::{EmailUserId, SessionInfo, StoredChallenge, UserIdCredentialIdStr};
+
+pub async fn init() -> Result<(), PasskeyError> {
+    // Validate required environment variables early
+    let _ = *super::config::PASSKEY_RP_ID;
+
+    // Initialize libstorage's cache store first
+    libstorage::init_cache_store()
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))?;
+
+    PasskeyStore::init().await?;
+
+    Ok(())
+}
 
 pub(crate) fn base64url_decode(input: &str) -> Result<Vec<u8>, PasskeyError> {
     let padding_len = (4 - input.len() % 4) % 4;

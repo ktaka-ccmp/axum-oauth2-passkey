@@ -9,3 +9,4 @@
 9. When we need more visibility I want to re-export necessary items only
 10. I want the commit messages reflecting the changes actually made, and with intentions
 11. Avoid using unwrap() or expect() unless absolutely reasonable.
+12. Even when you voluntarily notice some changes are feasible, never modify the code beyond my requests without first discussing the changes and explicit approval from me.

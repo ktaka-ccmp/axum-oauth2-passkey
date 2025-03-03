@@ -1,7 +1,7 @@
 use axum::{Router, extract::Json, http::StatusCode, routing::post};
 use libpasskey::{
     AuthenticationOptions, AuthenticatorResponse, RegisterCredential, RegistrationOptions,
-    finish_registration, start_authentication, start_registration, verify_authentication,
+    finish_authentication, finish_registration, start_authentication, start_registration,
 };
 
 pub fn router_register() -> Router {
@@ -50,7 +50,7 @@ async fn handle_start_authentication(
 async fn handle_finish_authentication(
     Json(auth_response): Json<AuthenticatorResponse>,
 ) -> Result<String, (StatusCode, String)> {
-    verify_authentication(auth_response)
+    finish_authentication(auth_response)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
 }
