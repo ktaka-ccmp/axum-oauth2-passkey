@@ -1,6 +1,7 @@
-use crate::types::PublicKeyCredentialUserEntity;
 use ciborium::value::Value as CborValue;
 use serde::{Deserialize, Serialize};
+
+use crate::types::PublicKeyCredentialUserEntity;
 
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -126,4 +127,12 @@ pub(super) struct AuthenticatorData {
 
     /// Raw authenticator data for verification
     pub(super) raw_data: Vec<u8>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub(super) struct WebAuthnClientData {
+    #[serde(rename = "type")]
+    pub(super) type_: String,
+    pub(super) challenge: String, // base64url encoded
+    pub(super) origin: String,
 }

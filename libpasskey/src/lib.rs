@@ -22,4 +22,4 @@ pub use passkey::{
     start_authentication, start_registration, start_registration_with_auth_user,
 };
 
-pub use common::{email_to_user_id, init};
+pub use common::init;

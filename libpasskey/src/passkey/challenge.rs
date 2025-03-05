@@ -3,19 +3,19 @@ use std::time::SystemTime;
 use crate::common::{get_from_cache, remove_from_cache};
 use crate::config::PASSKEY_CHALLENGE_TIMEOUT;
 use crate::errors::PasskeyError;
-use crate::types::StoredChallenge;
+use crate::types::StoredOptions;
 
 /// Retrieves and validates a stored challenge from the cache
 ///
 /// This function:
 /// 1. Retrieves the challenge from the cache using the provided challenge type and ID
 /// 2. Validates the challenge TTL (Time-To-Live)
-/// 3. Returns the validated StoredChallenge if successful
-pub async fn get_and_validate_challenge(
+/// 3. Returns the validated StoredOptions if successful
+pub async fn get_and_validate_options(
     challenge_type: &str,
     id: &str,
-) -> Result<StoredChallenge, PasskeyError> {
-    let stored_challenge: StoredChallenge = get_from_cache(challenge_type, id)
+) -> Result<StoredOptions, PasskeyError> {
+    let stored_options: StoredOptions = get_from_cache(challenge_type, id)
         .await?
         .ok_or(PasskeyError::NotFound("Challenge not found".to_string()))?;
 
@@ -24,8 +24,8 @@ pub async fn get_and_validate_challenge(
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let age = now - stored_challenge.timestamp;
-    let timeout = stored_challenge.ttl.min(*PASSKEY_CHALLENGE_TIMEOUT as u64);
+    let age = now - stored_options.timestamp;
+    let timeout = stored_options.ttl.min(*PASSKEY_CHALLENGE_TIMEOUT as u64);
     if age > timeout {
         tracing::warn!(
             "Challenge expired after {} seconds (timeout: {})",
@@ -37,18 +37,18 @@ pub async fn get_and_validate_challenge(
         ));
     }
 
-    tracing::debug!("Found stored challenge: {:?}", stored_challenge);
+    tracing::debug!("Found stored challenge: {:?}", stored_options);
 
-    Ok(stored_challenge)
+    Ok(stored_options)
 }
 
 /// Removes a challenge from the cache store after it has been used
 ///
 /// This function is called after a successful registration or authentication
 /// to clean up the challenge data from the cache.
-pub async fn remove_challenge(challenge_type: &str, id: &str) -> Result<(), PasskeyError> {
+pub async fn remove_options(challenge_type: &str, id: &str) -> Result<(), PasskeyError> {
     remove_from_cache(challenge_type, id).await?;
-    tracing::debug!("Removed {} challenge for ID: {}", challenge_type, id);
+    tracing::debug!("Removed {} options for ID: {}", challenge_type, id);
 
     Ok(())
 }
