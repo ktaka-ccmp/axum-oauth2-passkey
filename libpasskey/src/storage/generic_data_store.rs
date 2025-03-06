@@ -86,14 +86,15 @@ async fn create_tables_sqlite(pool: &Pool<Sqlite>) -> Result<(), PasskeyError> {
         r#"
         CREATE TABLE IF NOT EXISTS passkey_credentials (
             credential_id TEXT PRIMARY KEY NOT NULL,
-            user_id TEXT NOT NULL,
+            user_id TEXT NOT NULL REFERENCES users(id),
             public_key BLOB NOT NULL,
             counter INTEGER NOT NULL DEFAULT 0,
             user_handle TEXT NOT NULL,
             user_name TEXT NOT NULL,
             user_display_name TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
         "#,
     )
@@ -103,7 +104,8 @@ async fn create_tables_sqlite(pool: &Pool<Sqlite>) -> Result<(), PasskeyError> {
 
     sqlx::query(
         r#"
-        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_name ON passkey_credentials(user_name)
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_name ON passkey_credentials(user_name);
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_id ON passkey_credentials(user_id);
         "#,
     )
     .execute(pool)
@@ -217,19 +219,19 @@ async fn update_credential_counter_sqlite(
 
 // PostgreSQL implementations
 async fn create_tables_postgres(pool: &Pool<Postgres>) -> Result<(), PasskeyError> {
-    // Create the passkey_credentials table
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS passkey_credentials (
             credential_id TEXT PRIMARY KEY NOT NULL,
-            user_id TEXT NOT NULL,
+            user_id TEXT NOT NULL REFERENCES users(id),
             public_key BYTEA NOT NULL,
             counter INTEGER NOT NULL DEFAULT 0,
             user_handle TEXT NOT NULL,
             user_name TEXT NOT NULL,
             user_display_name TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
         "#,
     )
@@ -239,7 +241,8 @@ async fn create_tables_postgres(pool: &Pool<Postgres>) -> Result<(), PasskeyErro
 
     sqlx::query(
         r#"
-        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_name ON passkey_credentials(user_name)
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_name ON passkey_credentials(user_name);
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_id ON passkey_credentials(user_id);
         "#,
     )
     .execute(pool)

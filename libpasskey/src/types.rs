@@ -20,9 +20,9 @@ pub(super) struct StoredOptions {
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub(super) struct StoredCredential {
     pub(super) credential_id: Vec<u8>,
+    pub(super) user_id: String,
     pub(super) public_key: Vec<u8>,
     pub(super) counter: u32,
-    pub(super) user_id: String,
     pub(super) user: PublicKeyCredentialUserEntity,
     pub(super) created_at: DateTime<Utc>,
     pub(super) updated_at: DateTime<Utc>,
