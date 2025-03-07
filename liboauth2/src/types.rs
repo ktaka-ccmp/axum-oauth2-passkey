@@ -1,8 +1,10 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use uuid;
 
 use libsession::User as SessionUser;
+use libuserdb::OAuth2Account;
 
 use super::errors::OAuth2Error;
 use super::oauth2::IdInfo as GoogleIdInfo;
@@ -20,10 +22,12 @@ pub struct GoogleUserInfo {
     pub(crate) verified_email: bool,
 }
 
-impl From<GoogleUserInfo> for SessionUser {
+// Add these implementations
+impl From<GoogleUserInfo> for OAuth2Account {
     fn from(google_user: GoogleUserInfo) -> Self {
         Self {
-            id: "_undefined".to_string(),
+            id: uuid::Uuid::new_v4().to_string(),
+            user_id: String::new(), // Will be set during upsert process
             name: google_user.name,
             email: google_user.email,
             picture: google_user.picture,
@@ -41,10 +45,11 @@ impl From<GoogleUserInfo> for SessionUser {
     }
 }
 
-impl From<GoogleIdInfo> for SessionUser {
+impl From<GoogleIdInfo> for OAuth2Account {
     fn from(idinfo: GoogleIdInfo) -> Self {
         Self {
-            id: "_undefined".to_string(),
+            id: uuid::Uuid::new_v4().to_string(),
+            user_id: String::new(), // Will be set during upsert process
             name: idinfo.name,
             email: idinfo.email,
             picture: idinfo.picture,
@@ -61,6 +66,47 @@ impl From<GoogleIdInfo> for SessionUser {
         }
     }
 }
+// impl From<GoogleUserInfo> for OAuth2Account {
+//     fn from(google_user: GoogleUserInfo) -> Self {
+//         Self {
+//             id: "".to_string(),
+//             name: google_user.name,
+//             email: google_user.email,
+//             picture: google_user.picture,
+//             provider: "google".to_string(),
+//             provider_user_id: format!("google_{}", google_user.id),
+//             metadata: json!({
+//                 "family_name": google_user.family_name,
+//                 "given_name": google_user.given_name,
+//                 "hd": google_user.hd,
+//                 "verified_email": google_user.verified_email,
+//             }),
+//             created_at: Utc::now(),
+//             updated_at: Utc::now(),
+//         }
+//     }
+// }
+
+// impl From<GoogleIdInfo> for OAuth2Account {
+//     fn from(idinfo: GoogleIdInfo) -> Self {
+//         Self {
+//             id: "_undefined".to_string(),
+//             name: idinfo.name,
+//             email: idinfo.email,
+//             picture: idinfo.picture,
+//             provider: "google".to_string(),
+//             provider_user_id: format!("google_{}", idinfo.sub),
+//             metadata: json!({
+//                 "family_name": idinfo.family_name,
+//                 "given_name": idinfo.given_name,
+//                 "hd": idinfo.hd,
+//                 "verified_email": idinfo.email_verified,
+//             }),
+//             created_at: Utc::now(),
+//             updated_at: Utc::now(),
+//         }
+//     }
+// }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct StateParams {

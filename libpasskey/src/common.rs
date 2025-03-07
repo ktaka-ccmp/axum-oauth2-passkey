@@ -40,7 +40,7 @@ pub(crate) fn generate_challenge() -> Result<Vec<u8>, PasskeyError> {
     Ok(challenge)
 }
 
-pub(crate) fn gen_random_string(len: usize) -> Result<String, PasskeyError> {
+pub fn gen_random_string(len: usize) -> Result<String, PasskeyError> {
     let rng = ring::rand::SystemRandom::new();
     let mut session_id = vec![0u8; len];
     rng.fill(&mut session_id)

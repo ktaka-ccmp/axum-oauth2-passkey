@@ -22,4 +22,6 @@ pub use passkey::{
     start_authentication, start_registration, start_registration_with_auth_user,
 };
 
-pub use common::init;
+pub use common::{gen_random_string, init};
+
+pub use types::PublicKeyCredentialUserEntity;

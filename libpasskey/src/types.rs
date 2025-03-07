@@ -2,11 +2,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
-pub(super) struct PublicKeyCredentialUserEntity {
-    pub(super) user_handle: String,
-    pub(super) name: String,
+pub struct PublicKeyCredentialUserEntity {
+    pub user_handle: String,
+    pub name: String,
     #[serde(rename = "displayName")]
-    pub(super) display_name: String,
+    pub display_name: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

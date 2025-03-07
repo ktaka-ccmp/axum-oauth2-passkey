@@ -42,13 +42,8 @@ pub async fn start_registration(username: String) -> Result<RegistrationOptions,
 
 pub async fn start_registration_with_auth_user(
     user: SessionUser,
+    user_info: PublicKeyCredentialUserEntity,
 ) -> Result<RegistrationOptions, PasskeyError> {
-    let user_info = PublicKeyCredentialUserEntity {
-        user_handle: gen_random_string(16)?,
-        name: user.email.clone(),
-        display_name: user.name.clone(),
-    };
-
     let session_info = SessionInfo { user };
 
     store_in_cache("session_info", &user_info.user_handle, session_info).await?;

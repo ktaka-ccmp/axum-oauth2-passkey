@@ -25,9 +25,11 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace =true }
 
 libsession = { workspace = true }
 libstorage = { workspace = true }
+libuserdb = { workspace = true }
 
 [package.metadata.askama]
 dir = "templates"

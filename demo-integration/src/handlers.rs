@@ -33,7 +33,7 @@ struct ProtectedTemplate<'a> {
 pub(crate) async fn index(user: Option<User>) -> Result<Html<String>, (StatusCode, String)> {
     match user {
         Some(u) => {
-            let message = format!("Hey {}!", u.name);
+            let message = format!("Hey {}!", u.id);
             let template = IndexTemplateUser {
                 user: u,
                 message: &message,
