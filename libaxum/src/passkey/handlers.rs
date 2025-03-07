@@ -13,9 +13,9 @@ use libpasskey::{
     start_registration, start_registration_with_auth_user,
 };
 
+use liboauth2::OAuth2Store;
 use libpasskey::PASSKEY_ROUTE_PREFIX;
 use libsession::{User as SessionUser, create_session_with_uid};
-use libuserdb::UserStore;
 
 use crate::session::AuthUser;
 
@@ -29,7 +29,7 @@ pub(crate) async fn handle_start_registration_get(
 
             let session_user: SessionUser = (*u).clone();
 
-            let oauth2_accounts = UserStore::get_oauth2_accounts(&session_user.id)
+            let oauth2_accounts = OAuth2Store::get_oauth2_accounts(&session_user.id)
                 .await
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
                 .first()

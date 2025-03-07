@@ -22,7 +22,7 @@
 </head>
 <body>
     <h1>Welcome to the Protected Area</h1>
-    <p>Hello, {{ user.name }}! You've successfully authenticated.</p>
+    <p>Hello, {{ user.id }}! You've successfully authenticated.</p>
     
     <div class="user-info">
         <h2>Your Profile Information:</h2>
@@ -30,10 +30,10 @@
             
             <dt>Picture URL</dt>
             <dd>
-            {% if user.picture.is_some() %}
+            {# {% if user.picture.is_some() %}
                 <img src="{{ user.picture.as_ref().unwrap() }}" alt="Profile picture" style="max-width: 100px; border-radius: 50%;">
             {% else %}
-            {% endif %}
+            {% endif %} #}
             </dd>
         </dl>
     </div>

@@ -1,0 +1,19 @@
+[package]
+name = "libauth"
+version = { workspace = true }
+edition = { workspace = true }
+description = "Authentication coordination library for axum-oauth2-passkey"
+license = "MIT"
+authors = ["Kei Takahashi <kei.takahashi@gmail.com>"]
+
+[dependencies]
+liboauth2 = { path = "../liboauth2" }
+libpasskey = { path = "../libpasskey" }
+libuserdb = { path = "../libuserdb" }
+libstorage = { path = "../libstorage" }
+thiserror = "1.0"
+uuid = { version = "1.4", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

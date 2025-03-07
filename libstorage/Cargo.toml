@@ -11,17 +11,19 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-sqlx = { version = "0.8", features = [
-    "any",
-    "chrono",
-    "json",
-    "macros",
-    "mysql",
-    "postgres",
-    "regexp",
-    "runtime-tokio",
-    "runtime-tokio-native-tls",
-    "runtime-tokio-rustls",
-    "sqlite",
-    "runtime-async-std-native-tls"
-], default-features = false }
+sqlx = { workspace = true }
+
+# sqlx = { version = "0.8", features = [
+#     "any",
+#     "chrono",
+#     "json",
+#     "macros",
+#     "mysql",
+#     "postgres",
+#     "regexp",
+#     "runtime-tokio",
+#     "runtime-tokio-native-tls",
+#     "runtime-tokio-rustls",
+#     "sqlite",
+#     "runtime-async-std-native-tls"
+# ], default-features = false }

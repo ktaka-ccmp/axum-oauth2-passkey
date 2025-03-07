@@ -14,7 +14,9 @@ mod types;
 // pub use types::AppState;
 
 // pub use axum::router;
+pub use common::{gen_random_string, init};
 pub use config::PASSKEY_ROUTE_PREFIX; // Required for route configuration
+pub use errors::PasskeyError;
 
 pub use passkey::{
     AuthenticationOptions, AuthenticatorResponse, RegisterCredential, RegistrationOptions,
@@ -22,6 +24,5 @@ pub use passkey::{
     start_authentication, start_registration, start_registration_with_auth_user,
 };
 
-pub use common::{gen_random_string, init};
-
-pub use types::PublicKeyCredentialUserEntity;
+pub use storage::PasskeyStore;
+pub use types::{PublicKeyCredentialUserEntity, StoredCredential};

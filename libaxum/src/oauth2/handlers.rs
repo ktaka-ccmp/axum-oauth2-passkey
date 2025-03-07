@@ -8,7 +8,6 @@ use axum::{
 };
 use axum_extra::{TypedHeader, headers};
 use chrono::{Duration, Utc};
-use libuserdb::{OAuth2Account, User, UserStore};
 // use axum_core::response::Response;
 
 // Helper trait for converting errors to a standard response error format
@@ -22,14 +21,17 @@ impl<T, E: std::fmt::Display> IntoResponseError<T> for Result<T, E> {
     }
 }
 
+use libuserdb::{User, UserStore};
+
 use liboauth2::{
-    AuthResponse, OAUTH2_AUTH_URL, OAUTH2_CSRF_COOKIE_NAME, OAUTH2_ROUTE_PREFIX, csrf_checks,
-    get_idinfo_userinfo, header_set_cookie, prepare_oauth2_auth_request, validate_origin,
+    AuthResponse, OAUTH2_AUTH_URL, OAUTH2_CSRF_COOKIE_NAME, OAUTH2_ROUTE_PREFIX, OAuth2Account,
+    OAuth2Store, csrf_checks, get_idinfo_userinfo, header_set_cookie, prepare_oauth2_auth_request,
+    validate_origin,
 };
 
 use libsession::{
-    SESSION_COOKIE_NAME, User as SessionUser, create_session_with_uid, create_session_with_user,
-    delete_session_from_store, prepare_logout_response,
+    SESSION_COOKIE_NAME, create_session_with_uid, delete_session_from_store,
+    prepare_logout_response,
 };
 
 pub fn router() -> Router {
@@ -150,7 +152,7 @@ async fn authorized(
     // Upsert oauth2_account and user
     // 1. Check if the OAuth2 account exists
 
-    let existing_account = UserStore::get_oauth2_account_by_provider(
+    let existing_account = OAuth2Store::get_oauth2_account_by_provider(
         &oauth2_account.provider,
         &oauth2_account.provider_user_id,
     )
@@ -179,7 +181,7 @@ async fn authorized(
             oauth2_account.user_id = stored_user.id.clone();
 
             // Store the OAuth2 account
-            UserStore::upsert_oauth2_account(oauth2_account)
+            OAuth2Store::upsert_oauth2_account(oauth2_account)
                 .await
                 .into_response_error()?;
 

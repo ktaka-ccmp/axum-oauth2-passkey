@@ -9,7 +9,7 @@ use libaxum::AuthUser as User;
 #[derive(Template)]
 #[template(path = "index_user.j2")]
 struct IndexTemplateUser<'a> {
-    user: User,
+    // user: User,
     message: &'a str,
     auth_route_prefix: &'a str,
     passkey_route_prefix: &'a str,
@@ -35,7 +35,7 @@ pub(crate) async fn index(user: Option<User>) -> Result<Html<String>, (StatusCod
         Some(u) => {
             let message = format!("Hey {}!", u.id);
             let template = IndexTemplateUser {
-                user: u,
+                // user: u,
                 message: &message,
                 auth_route_prefix: OAUTH2_ROUTE_PREFIX.as_str(),
                 passkey_route_prefix: PASSKEY_ROUTE_PREFIX.as_str(),

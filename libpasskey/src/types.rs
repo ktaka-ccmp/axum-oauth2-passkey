@@ -18,7 +18,7 @@ pub(super) struct StoredOptions {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub(super) struct StoredCredential {
+pub struct StoredCredential {
     pub(super) credential_id: Vec<u8>,
     pub(super) user_id: String,
     pub(super) public_key: Vec<u8>,
@@ -47,7 +47,7 @@ pub(super) struct SessionInfo {
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) enum CredentialSearchField {
+pub enum CredentialSearchField {
     CredentialId(String),
     UserId(String),
     UserHandle(String),
