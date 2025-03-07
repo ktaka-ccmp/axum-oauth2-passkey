@@ -1,22 +1,21 @@
 use base64::engine::{Engine, general_purpose::URL_SAFE};
 use ring::{digest, signature::UnparsedPublicKey};
 
-use super::challenge::{get_and_validate_challenge, remove_challenge};
+use super::challenge::{get_and_validate_options, remove_options};
 use super::types::{
     AllowCredential, AuthenticationOptions, AuthenticatorData, AuthenticatorResponse,
     ParsedClientData,
 };
 
 use crate::common::{
-    base64url_decode, email_to_user_id, gen_random_string, generate_challenge, store_in_cache,
-    uid2cid_str_vec,
+    base64url_decode, gen_random_string, generate_challenge, name2cid_str_vec, store_in_cache,
 };
 use crate::config::{
     ORIGIN, PASSKEY_CHALLENGE_TIMEOUT, PASSKEY_RP_ID, PASSKEY_TIMEOUT, PASSKEY_USER_VERIFICATION,
 };
 use crate::errors::PasskeyError;
 use crate::storage::PasskeyStore;
-use crate::types::{PublicKeyCredentialUserEntity, StoredChallenge, StoredCredential};
+use crate::types::{PublicKeyCredentialUserEntity, StoredCredential, StoredOptions};
 
 pub async fn start_authentication(
     username: Option<String>,
@@ -24,9 +23,7 @@ pub async fn start_authentication(
     let mut allow_credentials = Vec::new();
     match username.clone() {
         Some(username) => {
-            let user_id = email_to_user_id(username).await?;
-
-            let credential_id_strs = uid2cid_str_vec(user_id).await?;
+            let credential_id_strs = name2cid_str_vec(&username).await?;
 
             for credential in credential_id_strs {
                 allow_credentials.push(AllowCredential {
@@ -43,7 +40,7 @@ pub async fn start_authentication(
     let challenge = generate_challenge();
     let auth_id = gen_random_string(16)?;
 
-    let stored_challenge = StoredChallenge {
+    let stored_options = StoredOptions {
         challenge: challenge.clone().unwrap_or_default(),
         user: PublicKeyCredentialUserEntity {
             user_handle: "temp".to_string(),
@@ -57,7 +54,7 @@ pub async fn start_authentication(
         ttl: *PASSKEY_CHALLENGE_TIMEOUT as u64,
     };
 
-    store_in_cache("auth_challenge", &auth_id, stored_challenge).await?;
+    store_in_cache("auth_challenge", &auth_id, stored_options).await?;
 
     let auth_option = AuthenticationOptions {
         challenge: URL_SAFE.encode(challenge.unwrap_or_default()),
@@ -75,15 +72,14 @@ pub async fn start_authentication(
 
 pub async fn finish_authentication(
     auth_response: AuthenticatorResponse,
-) -> Result<String, PasskeyError> {
+) -> Result<(String, String), PasskeyError> {
     tracing::debug!(
         "Starting authentication verification for response: {:?}",
         auth_response
     );
 
     // Get stored challenge and verify auth
-    let stored_challenge =
-        get_and_validate_challenge("auth_challenge", &auth_response.auth_id).await?;
+    let stored_options = get_and_validate_options("auth_challenge", &auth_response.auth_id).await?;
 
     tracing::debug!(
         "Parsing client data: {}",
@@ -95,7 +91,7 @@ pub async fn finish_authentication(
     tracing::debug!("Parsed client data: {:?}", client_data);
 
     // Verify client data i.e. challenge, origin and type(="webauthn.get")
-    client_data.verify(&stored_challenge.challenge)?;
+    client_data.verify(&stored_options.challenge)?;
 
     tracing::debug!(
         "Parsing authenticator data: {}",
@@ -143,13 +139,14 @@ pub async fn finish_authentication(
     verify_counter(&auth_response.id, &auth_data, &stored_credential).await?;
 
     // Verify signature and cleanup
-    let user_name =
-        verify_signature(&auth_response, &client_data, &auth_data, &stored_credential).await?;
+    verify_signature(&auth_response, &client_data, &auth_data, &stored_credential).await?;
 
     // Remove challenge from cache
-    remove_challenge("auth_challenge", &auth_response.auth_id).await?;
+    remove_options("auth_challenge", &auth_response.auth_id).await?;
+    let user_name = stored_credential.user.name.clone();
+    let user_id = stored_credential.user_id.clone();
 
-    Ok(user_name)
+    Ok((user_id, user_name))
 }
 
 impl ParsedClientData {
@@ -438,7 +435,7 @@ async fn verify_signature(
     client_data: &ParsedClientData,
     auth_data: &AuthenticatorData,
     stored_credential: &StoredCredential,
-) -> Result<String, PasskeyError> {
+) -> Result<(), PasskeyError> {
     let verification_algorithm = &ring::signature::ECDSA_P256_SHA256_ASN1;
     let public_key = UnparsedPublicKey::new(verification_algorithm, &stored_credential.public_key);
 
@@ -461,7 +458,7 @@ async fn verify_signature(
     match public_key.verify(&signed_data, &signature) {
         Ok(_) => {
             tracing::info!("Signature verification successful");
-            Ok(stored_credential.user.name.clone())
+            Ok(())
         }
         Err(e) => {
             tracing::error!("Signature verification failed: {:?}", e);

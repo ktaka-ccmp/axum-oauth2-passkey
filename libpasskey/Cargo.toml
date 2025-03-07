@@ -10,19 +10,20 @@ oid-registry = "0.8.1"
 redis = { version = "0.29.1", features = ["tokio-comp"] }
 ring = { version = "0.17.11", features = ["std"] }
 serde = { version = "1.0.218", features = ["derive"] }
-sqlx = { version = "0.8", features = [
-    "any",
-    "chrono", 
-    "json", 
-    "macros",
-    "mysql", 
-    "postgres", 
-    "regexp", 
-    "runtime-tokio-native-tls", 
-    "runtime-tokio-rustls", 
-    "sqlite",
-    "runtime-async-std-native-tls"
-], default-features = false }
+sqlx = { workspace = true }
+# sqlx = { version = "0.8", features = [
+#     "any",
+#     "chrono", 
+#     "json", 
+#     "macros",
+#     "mysql", 
+#     "postgres", 
+#     "regexp", 
+#     "runtime-tokio-native-tls", 
+#     "runtime-tokio-rustls", 
+#     "sqlite",
+#     "runtime-async-std-native-tls"
+# ], default-features = false }
 webpki = { version = "0.22.4", features = ["std"] }
 x509-parser = { version = "0.17.0", features = ["validate", "verify"] }
 

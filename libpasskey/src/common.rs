@@ -1,11 +1,14 @@
-use base64::engine::{Engine, general_purpose::URL_SAFE};
+use base64::engine::{
+    Engine,
+    general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
+};
 use ring::rand::SecureRandom;
 
 use libstorage::GENERIC_CACHE_STORE;
 
 use crate::errors::PasskeyError;
 use crate::storage::PasskeyStore;
-use crate::types::{EmailUserId, SessionInfo, StoredChallenge, UserIdCredentialIdStr};
+use crate::types::{CredentialSearchField, SessionInfo, StoredOptions, UserIdCredentialIdStr};
 
 pub async fn init() -> Result<(), PasskeyError> {
     // Validate required environment variables early
@@ -37,7 +40,7 @@ pub(crate) fn generate_challenge() -> Result<Vec<u8>, PasskeyError> {
     Ok(challenge)
 }
 
-pub(crate) fn gen_random_string(len: usize) -> Result<String, PasskeyError> {
+pub fn gen_random_string(len: usize) -> Result<String, PasskeyError> {
     let rng = ring::rand::SystemRandom::new();
     let mut session_id = vec![0u8; len];
     rng.fill(&mut session_id)
@@ -45,73 +48,30 @@ pub(crate) fn gen_random_string(len: usize) -> Result<String, PasskeyError> {
     Ok(URL_SAFE.encode(session_id))
 }
 
-pub async fn email_to_user_id(username: String) -> Result<String, PasskeyError> {
-    let email_user_id: EmailUserId = GENERIC_CACHE_STORE
-        .lock()
-        .await
-        .get("email", &username)
-        .await
-        .map_err(|e| PasskeyError::Storage(e.to_string()))?
-        .ok_or_else(|| PasskeyError::NotFound("User not found".to_string()))?
-        .try_into()?;
-
-    Ok(email_user_id.user_id)
-}
-
-pub(crate) async fn uid2cid_str_vec(
-    user_id: String,
+pub(crate) async fn get_credential_id_strs_by(
+    field: CredentialSearchField,
 ) -> Result<Vec<UserIdCredentialIdStr>, PasskeyError> {
-    let credential_id_strs: Vec<UserIdCredentialIdStr> = GENERIC_CACHE_STORE
-        .lock()
-        .await
-        .gets("uid2cid_str", &user_id)
-        .await
-        .map_err(|e| PasskeyError::Storage(e.to_string()))?
+    let stored_credentials = PasskeyStore::get_credentials_by(field).await?;
+
+    let credential_id_strs = stored_credentials
         .into_iter()
-        .filter_map(|data| {
-            if let Ok(id_str) = UserIdCredentialIdStr::try_from(data) {
-                Some(id_str)
-            } else {
-                None
-            }
+        .map(|cred| UserIdCredentialIdStr {
+            user_id: cred.user_id,
+            credential_id_str: URL_SAFE_NO_PAD.encode(&cred.credential_id),
+            credential_id: cred.credential_id,
         })
         .collect();
+
     Ok(credential_id_strs)
 }
 
+pub(crate) async fn name2cid_str_vec(
+    name: &str,
+) -> Result<Vec<UserIdCredentialIdStr>, PasskeyError> {
+    get_credential_id_strs_by(CredentialSearchField::UserName(name.to_string())).await
+}
+
 /// Helper functions for cache store operations to improve code reuse and maintainability
-impl From<EmailUserId> for libstorage::CacheData {
-    fn from(data: EmailUserId) -> Self {
-        Self {
-            value: serde_json::to_vec(&data).expect("Failed to serialize EmailUserId"),
-        }
-    }
-}
-
-impl TryFrom<libstorage::CacheData> for EmailUserId {
-    type Error = PasskeyError;
-
-    fn try_from(data: libstorage::CacheData) -> Result<Self, Self::Error> {
-        serde_json::from_slice(&data.value).map_err(|e| PasskeyError::Storage(e.to_string()))
-    }
-}
-
-impl From<UserIdCredentialIdStr> for libstorage::CacheData {
-    fn from(data: UserIdCredentialIdStr) -> Self {
-        Self {
-            value: serde_json::to_vec(&data).expect("Failed to serialize UserIdCredentialIdStr"),
-        }
-    }
-}
-
-impl TryFrom<libstorage::CacheData> for UserIdCredentialIdStr {
-    type Error = PasskeyError;
-
-    fn try_from(data: libstorage::CacheData) -> Result<Self, Self::Error> {
-        serde_json::from_slice(&data.value).map_err(|e| PasskeyError::Storage(e.to_string()))
-    }
-}
-
 impl From<SessionInfo> for libstorage::CacheData {
     fn from(data: SessionInfo) -> Self {
         Self {
@@ -128,15 +88,15 @@ impl TryFrom<libstorage::CacheData> for SessionInfo {
     }
 }
 
-impl From<StoredChallenge> for libstorage::CacheData {
-    fn from(data: StoredChallenge) -> Self {
+impl From<StoredOptions> for libstorage::CacheData {
+    fn from(data: StoredOptions) -> Self {
         Self {
-            value: serde_json::to_vec(&data).expect("Failed to serialize StoredChallenge"),
+            value: serde_json::to_vec(&data).expect("Failed to serialize StoredOptions"),
         }
     }
 }
 
-impl TryFrom<libstorage::CacheData> for StoredChallenge {
+impl TryFrom<libstorage::CacheData> for StoredOptions {
     type Error = PasskeyError;
 
     fn try_from(data: libstorage::CacheData) -> Result<Self, Self::Error> {

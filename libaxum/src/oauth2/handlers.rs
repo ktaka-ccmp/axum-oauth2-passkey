@@ -21,13 +21,16 @@ impl<T, E: std::fmt::Display> IntoResponseError<T> for Result<T, E> {
     }
 }
 
+use libuserdb::{User, UserStore};
+
 use liboauth2::{
-    AuthResponse, OAUTH2_AUTH_URL, OAUTH2_CSRF_COOKIE_NAME, OAUTH2_ROUTE_PREFIX, csrf_checks,
-    get_idinfo_userinfo, header_set_cookie, prepare_oauth2_auth_request, validate_origin,
+    AuthResponse, OAUTH2_AUTH_URL, OAUTH2_CSRF_COOKIE_NAME, OAUTH2_ROUTE_PREFIX, OAuth2Account,
+    OAuth2Store, csrf_checks, get_idinfo_userinfo, header_set_cookie, prepare_oauth2_auth_request,
+    validate_origin,
 };
 
 use libsession::{
-    SESSION_COOKIE_NAME, User as SessionUser, create_session_with_user, delete_session_from_store,
+    SESSION_COOKIE_NAME, create_session_with_uid, delete_session_from_store,
     prepare_logout_response,
 };
 
@@ -131,15 +134,69 @@ async fn authorized(
     // Convert GoogleUserInfo to DbUser and store it
     static OAUTH2_GOOGLE_USER: &str = "idinfo";
 
-    let user_data = match OAUTH2_GOOGLE_USER {
-        "idinfo" => SessionUser::from(idinfo),
-        "userinfo" => SessionUser::from(userinfo),
-        _ => SessionUser::from(idinfo), // Default case
+    let mut oauth2_account = match OAUTH2_GOOGLE_USER {
+        "idinfo" => OAuth2Account::from(idinfo),
+        "userinfo" => OAuth2Account::from(userinfo),
+        _ => OAuth2Account::from(idinfo), // Default case
     };
 
-    let mut headers = create_session_with_user(user_data)
+    // Upsert oauth2_account and user
+    // 1. Check if sub of idinfo/userinfo has a corresponding entry in oauth2_account table
+    // 2. If not, create a new entry in users table
+    // 3. Create a new entry in oauth2_account table
+
+    // Create session with user_id
+    // 4. Create a new entry in session store
+    // 5. Create a header for the session cookie
+
+    // Upsert oauth2_account and user
+    // 1. Check if the OAuth2 account exists
+
+    let existing_account = OAuth2Store::get_oauth2_account_by_provider(
+        &oauth2_account.provider,
+        &oauth2_account.provider_user_id,
+    )
+    .await
+    .into_response_error()?;
+
+    // 2. Process the account
+    let user_id = match existing_account {
+        // If account exists, use its user_id
+        Some(account) => account.user_id,
+        // If not, create a new user and link it
+        None => {
+            // Create a new user
+            let new_user = User {
+                id: uuid::Uuid::new_v4().to_string(),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            };
+
+            // Store the user
+            let stored_user = UserStore::upsert_user(new_user)
+                .await
+                .into_response_error()?;
+
+            // Set the user_id in the OAuth2 account
+            oauth2_account.user_id = stored_user.id.clone();
+
+            // Store the OAuth2 account
+            OAuth2Store::upsert_oauth2_account(oauth2_account)
+                .await
+                .into_response_error()?;
+
+            stored_user.id
+        }
+    };
+
+    // Create session with the user_id
+    let mut headers = create_session_with_uid(&user_id)
         .await
         .into_response_error()?;
+
+    // let mut headers = create_session_with_user(user_data)
+    //     .await
+    //     .into_response_error()?;
 
     let _ = header_set_cookie(
         &mut headers,

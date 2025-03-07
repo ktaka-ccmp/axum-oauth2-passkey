@@ -10,8 +10,8 @@ chrono = { workspace = true }
 redis = { version = "0.29.1", features = ["tokio-comp", "connection-manager"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "postgres", "chrono", "json", "uuid"] }
+sqlx = { workspace = true }
 thiserror = { workspace = true }
-uuid = { version = "1.15", features = ["v4"] }
+uuid = { workspace =true }
 
 libstorage = { workspace = true }

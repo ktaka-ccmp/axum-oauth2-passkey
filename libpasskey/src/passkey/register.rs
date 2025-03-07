@@ -1,13 +1,16 @@
-use base64::engine::{Engine, general_purpose::URL_SAFE};
+use base64::engine::{
+    Engine,
+    general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
+};
 use chrono::Utc;
 use ciborium::value::{Integer, Value as CborValue};
 
 use libsession::User as SessionUser;
 
-use super::challenge::{get_and_validate_challenge, remove_challenge};
+use super::challenge::{get_and_validate_options, remove_options};
 use super::types::{
     AttestationObject, AuthenticatorSelection, PubKeyCredParam, RegisterCredential,
-    RegistrationOptions, RelyingParty,
+    RegistrationOptions, RelyingParty, WebAuthnClientData,
 };
 
 use crate::common::{
@@ -21,10 +24,7 @@ use crate::config::{
 };
 use crate::errors::PasskeyError;
 use crate::storage::PasskeyStore;
-use crate::types::{
-    EmailUserId, PublicKeyCredentialUserEntity, SessionInfo, StoredChallenge, StoredCredential,
-    UserIdCredentialIdStr,
-};
+use crate::types::{PublicKeyCredentialUserEntity, SessionInfo, StoredCredential, StoredOptions};
 
 pub async fn start_registration(username: String) -> Result<RegistrationOptions, PasskeyError> {
     println!("start_registration user: {}", username);
@@ -42,13 +42,8 @@ pub async fn start_registration(username: String) -> Result<RegistrationOptions,
 
 pub async fn start_registration_with_auth_user(
     user: SessionUser,
+    user_info: PublicKeyCredentialUserEntity,
 ) -> Result<RegistrationOptions, PasskeyError> {
-    let user_info = PublicKeyCredentialUserEntity {
-        user_handle: gen_random_string(16)?,
-        name: user.email.clone(),
-        display_name: user.name.clone(),
-    };
-
     let session_info = SessionInfo { user };
 
     store_in_cache("session_info", &user_info.user_handle, session_info).await?;
@@ -64,7 +59,7 @@ pub async fn create_registration_options(
     user_info: PublicKeyCredentialUserEntity,
 ) -> Result<RegistrationOptions, PasskeyError> {
     let challenge = generate_challenge();
-    let stored_challenge = StoredChallenge {
+    let stored_challenge = StoredOptions {
         challenge: challenge.clone().unwrap_or_default(),
         user: user_info.clone(),
         timestamp: std::time::SystemTime::now()
@@ -126,9 +121,6 @@ pub async fn finish_registration_with_auth_user(
         .await?
         .ok_or(PasskeyError::NotFound("Session not found".to_string()))?;
 
-    // Delete the session info from the store
-    remove_from_cache("session_info", user_handle).await?;
-
     // Verify the user is the same as the one in the cache store i.e. used to start the registration
     if user.id != session_info.user.id {
         return Err(PasskeyError::Format("User ID mismatch".to_string()));
@@ -136,24 +128,8 @@ pub async fn finish_registration_with_auth_user(
 
     finish_registration(&reg_data).await?;
 
-    // Store email to user_id mapping in GENERIC_CACHE_STORE
-    let email_user_id = EmailUserId {
-        email: user.email.clone(),
-        user_id: user.id.clone(),
-    };
-
-    store_in_cache("email", &user.email, email_user_id).await?;
-
-    let credential_id = base64url_decode(&reg_data.raw_id)
-        .map_err(|e| PasskeyError::Format(format!("Failed to decode credential ID: {}", e)))?;
-
-    let credential_id_str = UserIdCredentialIdStr {
-        user_id: user.id.clone(),
-        credential_id_str: reg_data.raw_id,
-        credential_id,
-    };
-
-    store_in_cache("uid2cid_str", &user.id, credential_id_str).await?;
+    // Delete the session info from the store
+    remove_from_cache("session_info", user_handle).await?;
 
     Ok("Registration successful".to_string())
 }
@@ -176,14 +152,29 @@ pub async fn finish_registration(reg_data: &RegisterCredential) -> Result<String
             "User handle is missing".to_string(),
         ))?;
 
-    let stored_challenge = get_and_validate_challenge("regi_challenge", user_handle).await?;
-    let stored_user = stored_challenge.user.clone();
+    let stored_options = get_and_validate_options("regi_challenge", user_handle).await?;
+    let stored_user = stored_options.user.clone();
+
+    let session_info: Option<SessionInfo> = get_from_cache("session_info", user_handle).await?;
+
+    let user_id = session_info
+        .map(|s| s.user.id)
+        .unwrap_or("undefined".to_string());
+
+    // let user_id = match session_info {
+    //     Some(SessionInfo { user, .. }) => user.id,
+    //     None => {
+    //         tracing::error!("Session not found for user handle: {}", user_handle);
+    //         return Err(PasskeyError::NotFound("Session not found".to_string()));
+    //     }
+    // };
 
     // Store using base64url encoded credential_id as the key
     let credential_id_str = reg_data.raw_id.clone();
 
     let credential = StoredCredential {
         credential_id,
+        user_id,
         public_key,
         counter: 0,
         user: stored_user,
@@ -196,7 +187,7 @@ pub async fn finish_registration(reg_data: &RegisterCredential) -> Result<String
         .map_err(|e| PasskeyError::Storage(e.to_string()))?;
 
     // Remove used challenge
-    remove_challenge("regi_challenge", user_handle).await?;
+    remove_options("regi_challenge", user_handle).await?;
 
     Ok("Registration successful".to_string())
 }
@@ -347,8 +338,10 @@ fn parse_credential_data(auth_data: &[u8]) -> Result<&[u8], PasskeyError> {
 }
 
 fn extract_key_coordinates(credential_data: &[u8]) -> Result<(Vec<u8>, Vec<u8>), PasskeyError> {
-    let public_key_cbor: CborValue = ciborium::de::from_reader(credential_data)
-        .map_err(|e| PasskeyError::Format(format!("Invalid public key CBOR: {}", e)))?;
+    let public_key_cbor: CborValue = ciborium::de::from_reader(credential_data).map_err(|e| {
+        tracing::error!("Invalid public key CBOR: {}", e);
+        PasskeyError::Format(format!("Invalid public key CBOR: {}", e))
+    })?;
 
     if let CborValue::Map(map) = public_key_cbor {
         let mut x_coord = None;
@@ -382,61 +375,67 @@ fn extract_key_coordinates(credential_data: &[u8]) -> Result<(Vec<u8>, Vec<u8>),
 }
 
 async fn verify_client_data(reg_data: &RegisterCredential) -> Result<(), PasskeyError> {
-    // Decode and verify client data
-    let decoded_client_data = base64url_decode(&reg_data.response.client_data_json)
-        .map_err(|e| PasskeyError::Format(format!("Failed to decode client data: {}", e)))?;
-
-    let client_data_str = String::from_utf8(decoded_client_data.clone())
-        .map_err(|e| PasskeyError::Format(format!("Client data is not valid UTF-8: {}", e)))
-        .and_then(|s: String| {
-            serde_json::from_str::<serde_json::Value>(&s).map_err(|e| {
-                PasskeyError::Format(format!("Failed to parse client data JSON: {}", e))
-            })
+    // Step 5: Decode clientDataJSON as UTF-8
+    let decoded_client_data =
+        base64url_decode(&reg_data.response.client_data_json).map_err(|e| {
+            tracing::error!("Failed to decode client data: {}", e);
+            PasskeyError::Format(format!("Failed to decode client data: {}", e))
         })?;
 
-    let origin = client_data_str["origin"]
-        .as_str()
-        .ok_or(PasskeyError::ClientData(
-            "Missing origin in client data".to_string(),
-        ))?;
+    let client_data_str = String::from_utf8(decoded_client_data).map_err(|e| {
+        tracing::error!("Client data is not valid UTF-8: {}", e);
+        PasskeyError::Format(format!("Client data is not valid UTF-8: {}", e))
+    })?;
 
-    if origin != ORIGIN.to_string() {
-        return Err(PasskeyError::ClientData("Invalid origin".to_string()));
-    }
+    // Step 6: Parse JSON
+    let client_data: WebAuthnClientData = serde_json::from_str(&client_data_str).map_err(|e| {
+        tracing::error!("Failed to parse client data JSON: {}", e);
+        PasskeyError::Format(format!("Failed to parse client data JSON: {}", e))
+    })?;
 
-    let type_ = client_data_str["type"]
-        .as_str()
-        .ok_or(PasskeyError::ClientData(
-            "Missing type in client data".to_string(),
-        ))?;
+    tracing::debug!("Client data: {:#?}", client_data);
 
-    if type_ != "webauthn.create" {
+    // Step 7: Verify type
+    if client_data.type_ != "webauthn.create" {
+        tracing::error!("Invalid client data type: {}", client_data.type_);
         return Err(PasskeyError::ClientData("Invalid type".to_string()));
     }
 
-    let challenge = client_data_str["challenge"]
-        .as_str()
-        .ok_or(PasskeyError::ClientData(
-            "Missing challenge in client data".to_string(),
-        ))?;
+    let user_handle = reg_data.user_handle.as_deref().ok_or_else(|| {
+        tracing::error!("User handle is missing");
+        PasskeyError::ClientData("User handle is missing".to_string())
+    })?;
 
-    let decoded_challenge = base64url_decode(challenge)
-        .map_err(|e| PasskeyError::Format(format!("Failed to decode challenge: {}", e)))?;
+    let stored_options = get_and_validate_options("regi_challenge", user_handle).await?;
 
-    let user_handle = reg_data
-        .user_handle
-        .as_deref()
-        .ok_or(PasskeyError::ClientData(
-            "User handle is missing".to_string(),
-        ))?;
-
-    let stored_challenge = get_and_validate_challenge("regi_challenge", user_handle).await?;
-
-    if decoded_challenge != stored_challenge.challenge {
+    // Step 8: Verify challenge using base64url encoding comparison
+    let stored_challenge = URL_SAFE_NO_PAD.encode(&stored_options.challenge);
+    if client_data.challenge != stored_challenge {
+        tracing::error!(
+            "Challenge verification failed: client_data.challenge: {}, stored_options.challenge: {}",
+            client_data.challenge,
+            stored_challenge
+        );
         return Err(PasskeyError::Challenge(
             "Challenge verification failed".to_string(),
         ));
     }
+
+    // Step 9: Verify origin
+    if client_data.origin != *ORIGIN {
+        tracing::error!(
+            "Invalid origin. Expected {}, got {}",
+            *ORIGIN,
+            client_data.origin
+        );
+        return Err(PasskeyError::ClientData(format!(
+            "Invalid origin. Expected {}, got {}",
+            *ORIGIN, client_data.origin
+        )));
+    }
+
+    // Step 10: Token binding is optional in WebAuthn, we can skip it for now
+    // If we want to support it later, we would verify client_data.token_binding here
 
     Ok(())
 }

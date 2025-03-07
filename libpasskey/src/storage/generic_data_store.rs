@@ -3,7 +3,7 @@ use libstorage::GENERIC_DATA_STORE;
 use sqlx::{Pool, Postgres, Sqlite};
 
 use crate::errors::PasskeyError;
-use crate::types::{PublicKeyCredentialUserEntity, StoredCredential};
+use crate::types::{CredentialSearchField, PublicKeyCredentialUserEntity, StoredCredential};
 
 pub struct PasskeyStore;
 
@@ -50,22 +50,15 @@ impl PasskeyStore {
         }
     }
 
-    /// Retrieves all credentials associated with a specific user
-    ///
-    /// This is useful for:
-    /// - Listing all passkeys registered to a user
-    /// - Supporting account management features where users can view/delete their registered passkeys
-    /// - Implementing multi-device scenarios where users might have multiple credentials
-    #[allow(dead_code)]
-    pub async fn get_credentials_by_user(
-        user_id: &str,
+    pub async fn get_credentials_by(
+        field: CredentialSearchField,
     ) -> Result<Vec<StoredCredential>, PasskeyError> {
         let store = GENERIC_DATA_STORE.lock().await;
 
         if let Some(pool) = store.as_sqlite() {
-            get_credentials_by_user_sqlite(pool, user_id).await
+            get_credentials_by_field_sqlite(pool, &field).await
         } else if let Some(pool) = store.as_postgres() {
-            get_credentials_by_user_postgres(pool, user_id).await
+            get_credentials_by_field_postgres(pool, &field).await
         } else {
             Err(PasskeyError::Storage("Unsupported database type".into()))
         }
@@ -93,14 +86,26 @@ async fn create_tables_sqlite(pool: &Pool<Sqlite>) -> Result<(), PasskeyError> {
         r#"
         CREATE TABLE IF NOT EXISTS passkey_credentials (
             credential_id TEXT PRIMARY KEY NOT NULL,
+            user_id TEXT NOT NULL REFERENCES users(id),
             public_key BLOB NOT NULL,
             counter INTEGER NOT NULL DEFAULT 0,
             user_handle TEXT NOT NULL,
             user_name TEXT NOT NULL,
             user_display_name TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| PasskeyError::Storage(e.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_name ON passkey_credentials(user_name);
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_id ON passkey_credentials(user_id);
         "#,
     )
     .execute(pool)
@@ -117,6 +122,7 @@ async fn store_credential_sqlite(
 ) -> Result<(), PasskeyError> {
     let counter_i64 = credential.counter as i64;
     let public_key = &credential.public_key;
+    let user_id = &credential.user_id;
     let user_handle = &credential.user.user_handle;
     let user_name = &credential.user.name;
     let user_display_name = &credential.user.display_name;
@@ -126,11 +132,12 @@ async fn store_credential_sqlite(
     sqlx::query(
         r#"
         INSERT OR REPLACE INTO passkey_credentials 
-        (credential_id, public_key, counter, user_handle, user_name, user_display_name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (credential_id, user_id, public_key, counter, user_handle, user_name, user_display_name, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         "#,
     )
     .bind(credential_id)
+    .bind(user_id)
     .bind(public_key)
     .bind(counter_i64)
     .bind(user_handle)
@@ -158,17 +165,34 @@ async fn get_credential_sqlite(
     .map_err(|e| PasskeyError::Storage(e.to_string()))
 }
 
-async fn get_credentials_by_user_sqlite(
+async fn get_credentials_by_field_sqlite(
     pool: &Pool<Sqlite>,
-    user_handle: &str,
+    field: &CredentialSearchField,
 ) -> Result<Vec<StoredCredential>, PasskeyError> {
-    sqlx::query_as::<_, StoredCredential>(
-        r#"SELECT * FROM passkey_credentials WHERE user_handle = ?"#,
-    )
-    .bind(user_handle)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| PasskeyError::Storage(e.to_string()))
+    let (query, value) = match field {
+        CredentialSearchField::CredentialId(credential_id) => (
+            "SELECT * FROM passkey_credentials WHERE credential_id = ?",
+            credential_id.as_str(),
+        ),
+        CredentialSearchField::UserId(id) => (
+            "SELECT * FROM passkey_credentials WHERE user_id = ?",
+            id.as_str(),
+        ),
+        CredentialSearchField::UserHandle(handle) => (
+            "SELECT * FROM passkey_credentials WHERE user_handle = ?",
+            handle.as_str(),
+        ),
+        CredentialSearchField::UserName(name) => (
+            "SELECT * FROM passkey_credentials WHERE user_name = ?",
+            name.as_str(),
+        ),
+    };
+
+    sqlx::query_as::<_, StoredCredential>(query)
+        .bind(value)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))
 }
 
 async fn update_credential_counter_sqlite(
@@ -195,19 +219,30 @@ async fn update_credential_counter_sqlite(
 
 // PostgreSQL implementations
 async fn create_tables_postgres(pool: &Pool<Postgres>) -> Result<(), PasskeyError> {
-    // Create the passkey_credentials table
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS passkey_credentials (
             credential_id TEXT PRIMARY KEY NOT NULL,
+            user_id TEXT NOT NULL REFERENCES users(id),
             public_key BYTEA NOT NULL,
             counter INTEGER NOT NULL DEFAULT 0,
             user_handle TEXT NOT NULL,
             user_name TEXT NOT NULL,
             user_display_name TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
         )
+        "#,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| PasskeyError::Storage(e.to_string()))?;
+
+    sqlx::query(
+        r#"
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_name ON passkey_credentials(user_name);
+        CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_id ON passkey_credentials(user_id);
         "#,
     )
     .execute(pool)
@@ -224,6 +259,7 @@ async fn store_credential_postgres(
 ) -> Result<(), PasskeyError> {
     let counter_i32 = credential.counter as i32;
     let public_key = &credential.public_key;
+    let user_id = &credential.user_id;
     let user_handle = &credential.user.user_handle;
     let user_name = &credential.user.name;
     let user_display_name = &credential.user.display_name;
@@ -233,14 +269,15 @@ async fn store_credential_postgres(
     sqlx::query_as::<_, (i32,)>(
         r#"
         INSERT INTO passkey_credentials 
-        (credential_id, public_key, counter, user_handle, user_name, user_display_name, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        (credential_id, user_id, public_key, counter, user_handle, user_name, user_display_name, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (credential_id) DO UPDATE
-        SET public_key = $2, counter = $3, user_handle = $4, user_name = $5, user_display_name = $6, updated_at = CURRENT_TIMESTAMP
+        SET user_id = $2, public_key = $3, counter = $4, user_handle = $5, user_name = $6, user_display_name = $7, updated_at = CURRENT_TIMESTAMP
         RETURNING 1
         "#,
     )
     .bind(credential_id)
+    .bind(user_id)
     .bind(public_key)
     .bind(counter_i32)
     .bind(user_handle)
@@ -268,17 +305,34 @@ async fn get_credential_postgres(
     .map_err(|e| PasskeyError::Storage(e.to_string()))
 }
 
-async fn get_credentials_by_user_postgres(
+async fn get_credentials_by_field_postgres(
     pool: &Pool<Postgres>,
-    user_handle: &str,
+    field: &CredentialSearchField,
 ) -> Result<Vec<StoredCredential>, PasskeyError> {
-    sqlx::query_as::<_, StoredCredential>(
-        r#"SELECT * FROM passkey_credentials WHERE user_handle = $1"#,
-    )
-    .bind(user_handle)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| PasskeyError::Storage(e.to_string()))
+    let (query, value) = match field {
+        CredentialSearchField::CredentialId(credential_id) => (
+            "SELECT * FROM passkey_credentials WHERE credential_id = $1",
+            credential_id.as_str(),
+        ),
+        CredentialSearchField::UserId(id) => (
+            "SELECT * FROM passkey_credentials WHERE user_id = $1",
+            id.as_str(),
+        ),
+        CredentialSearchField::UserHandle(handle) => (
+            "SELECT * FROM passkey_credentials WHERE user_handle = $1",
+            handle.as_str(),
+        ),
+        CredentialSearchField::UserName(name) => (
+            "SELECT * FROM passkey_credentials WHERE user_name = $1",
+            name.as_str(),
+        ),
+    };
+
+    sqlx::query_as::<_, StoredCredential>(query)
+        .bind(value)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| PasskeyError::Storage(e.to_string()))
 }
 
 async fn update_credential_counter_postgres(
@@ -311,6 +365,7 @@ use sqlx::{FromRow, Row, postgres::PgRow, sqlite::SqliteRow};
 impl<'r> FromRow<'r, SqliteRow> for StoredCredential {
     fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
         let credential_id: String = row.try_get("credential_id")?;
+        let user_id: String = row.try_get("user_id")?;
         let public_key: Vec<u8> = row.try_get("public_key")?;
         let counter: i64 = row.try_get("counter")?;
         let user_handle: String = row.try_get("user_handle")?;
@@ -321,6 +376,7 @@ impl<'r> FromRow<'r, SqliteRow> for StoredCredential {
 
         Ok(StoredCredential {
             credential_id: credential_id.as_bytes().to_vec(),
+            user_id,
             public_key,
             counter: counter as u32,
             user: PublicKeyCredentialUserEntity {
@@ -338,6 +394,7 @@ impl<'r> FromRow<'r, SqliteRow> for StoredCredential {
 impl<'r> FromRow<'r, PgRow> for StoredCredential {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let credential_id: String = row.try_get("credential_id")?;
+        let user_id: String = row.try_get("user_id")?;
         let public_key: Vec<u8> = row.try_get("public_key")?;
         let counter: i32 = row.try_get("counter")?;
         let user_handle: String = row.try_get("user_handle")?;
@@ -348,6 +405,7 @@ impl<'r> FromRow<'r, PgRow> for StoredCredential {
 
         Ok(StoredCredential {
             credential_id: credential_id.as_bytes().to_vec(),
+            user_id,
             public_key,
             counter: counter as u32,
             user: PublicKeyCredentialUserEntity {

@@ -50,7 +50,9 @@ async fn handle_start_authentication(
 async fn handle_finish_authentication(
     Json(auth_response): Json<AuthenticatorResponse>,
 ) -> Result<String, (StatusCode, String)> {
-    finish_authentication(auth_response)
+    let (uid, name) = finish_authentication(auth_response)
         .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))
+        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+
+    Ok(format!("{}:{}", uid, name))
 }

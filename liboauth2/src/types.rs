@@ -1,11 +1,42 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-
-use libsession::User as SessionUser;
+use serde_json::{Value, json};
+use sqlx::FromRow;
 
 use super::errors::OAuth2Error;
 use super::oauth2::IdInfo as GoogleIdInfo;
+
+/// Represents an OAuth2 account linked to a user
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct OAuth2Account {
+    pub id: String,
+    pub user_id: String,
+    pub provider: String,
+    pub provider_user_id: String,
+    pub name: String,
+    pub email: String,
+    pub picture: Option<String>,
+    pub metadata: Value,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl Default for OAuth2Account {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            user_id: String::new(),
+            provider: String::new(),
+            provider_user_id: String::new(),
+            name: String::new(),
+            email: String::new(),
+            picture: None,
+            metadata: Value::Null,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+}
 
 // The user data we'll get back from Google
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,10 +51,12 @@ pub struct GoogleUserInfo {
     pub(crate) verified_email: bool,
 }
 
-impl From<GoogleUserInfo> for SessionUser {
+// Add these implementations
+impl From<GoogleUserInfo> for OAuth2Account {
     fn from(google_user: GoogleUserInfo) -> Self {
         Self {
-            id: "_undefined".to_string(),
+            id: uuid::Uuid::new_v4().to_string(),
+            user_id: String::new(), // Will be set during upsert process
             name: google_user.name,
             email: google_user.email,
             picture: google_user.picture,
@@ -41,10 +74,11 @@ impl From<GoogleUserInfo> for SessionUser {
     }
 }
 
-impl From<GoogleIdInfo> for SessionUser {
+impl From<GoogleIdInfo> for OAuth2Account {
     fn from(idinfo: GoogleIdInfo) -> Self {
         Self {
-            id: "_undefined".to_string(),
+            id: uuid::Uuid::new_v4().to_string(),
+            user_id: String::new(), // Will be set during upsert process
             name: idinfo.name,
             email: idinfo.email,
             picture: idinfo.picture,

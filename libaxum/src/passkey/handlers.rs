@@ -4,17 +4,18 @@ use axum::{
     http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
     response::{Html, IntoResponse, Response},
 };
+use serde_json::Value;
 
 use libpasskey::{
-    AuthenticationOptions, AuthenticatorResponse, RegisterCredential, RegistrationOptions,
-    email_to_user_id, finish_authentication, finish_registration,
-    finish_registration_with_auth_user, start_authentication, start_registration,
-    start_registration_with_auth_user,
+    AuthenticationOptions, AuthenticatorResponse, PublicKeyCredentialUserEntity,
+    RegisterCredential, RegistrationOptions, finish_authentication, finish_registration,
+    finish_registration_with_auth_user, gen_random_string, start_authentication,
+    start_registration, start_registration_with_auth_user,
 };
 
+use liboauth2::OAuth2Store;
 use libpasskey::PASSKEY_ROUTE_PREFIX;
 use libsession::{User as SessionUser, create_session_with_uid};
-use serde_json::Value;
 
 use crate::session::AuthUser;
 
@@ -27,7 +28,27 @@ pub(crate) async fn handle_start_registration_get(
             tracing::debug!("User: {:#?}", u);
 
             let session_user: SessionUser = (*u).clone();
-            let options = start_registration_with_auth_user(session_user)
+
+            let oauth2_accounts = OAuth2Store::get_oauth2_accounts(&session_user.id)
+                .await
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+                .first()
+                .cloned()
+                .ok_or_else(|| {
+                    (
+                        StatusCode::BAD_REQUEST,
+                        "No OAuth2 accounts found".to_string(),
+                    )
+                })?;
+
+            let user_info = PublicKeyCredentialUserEntity {
+                user_handle: gen_random_string(16)
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+                name: oauth2_accounts.email.clone(),
+                display_name: oauth2_accounts.name.clone(),
+            };
+
+            let options = start_registration_with_auth_user(session_user, user_info)
                 .await
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             Ok(Json(options))
@@ -94,11 +115,7 @@ pub(crate) async fn handle_finish_authentication(
 ) -> Result<(HeaderMap, String), (StatusCode, String)> {
     tracing::debug!("Auth response: {:#?}", auth_response);
 
-    let name = finish_authentication(auth_response)
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-
-    let uid = email_to_user_id(name.clone())
+    let (uid, name) = finish_authentication(auth_response)
         .await
         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
 

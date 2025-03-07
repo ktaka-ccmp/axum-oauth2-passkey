@@ -7,11 +7,12 @@ edition = { workspace = true }
 askama = { version = "0.12.1", features = ["serde-json"] }
 http = { workspace = true }
 tracing = { workspace = true }
-
+uuid = { workspace = true }
 
 liboauth2 = { workspace = true }
 libsession = { workspace = true }
 libpasskey = { workspace = true }
+libuserdb = { workspace = true }
 
 axum = { workspace = true }
 axum-extra = { workspace = true }
