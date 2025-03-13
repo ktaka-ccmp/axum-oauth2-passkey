@@ -198,15 +198,32 @@ async fn renew_session_header(user_id: String) -> Result<HeaderMap, (StatusCode,
     Ok(headers)
 }
 
-// When creating a new user, we assign email as name and name as display_name.
+// When creating a new user, map fields according to configuration or defaults
 // We also assign the user_id to the oauth2_account.
 async fn create_user_and_oauth2account(
     mut oauth2_account: OAuth2Account,
 ) -> Result<String, AuthError> {
+    // Get field mappings from environment or use defaults
+    let account_field = std::env::var("OAUTH2_USER_ACCOUNT_FIELD").unwrap_or_else(|_| "email".to_string());
+    let label_field = std::env::var("OAUTH2_USER_LABEL_FIELD").unwrap_or_else(|_| "name".to_string());
+    
+    // Map fields based on configuration
+    let account = match account_field.as_str() {
+        "email" => oauth2_account.email.clone(),
+        "name" => oauth2_account.name.clone(),
+        _ => oauth2_account.email.clone(), // Default to email if invalid mapping
+    };
+    
+    let label = match label_field.as_str() {
+        "email" => oauth2_account.email.clone(),
+        "name" => oauth2_account.name.clone(),
+        _ => oauth2_account.name.clone(), // Default to name if invalid mapping
+    };
+    
     let new_user = DbUser {
         id: uuid::Uuid::new_v4().to_string(),
-        account: oauth2_account.email.clone(),
-        label: oauth2_account.name.clone(),
+        account,
+        label,
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };

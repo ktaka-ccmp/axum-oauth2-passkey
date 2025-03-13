@@ -29,11 +29,28 @@ impl PasskeyCoordinator {
     ) -> Result<String, AuthError> {
         // Get user name from registration data with fallback mechanism
         let (name, display_name) = reg_data.get_user_name().await;
+        
+        // Get field mappings from environment or use defaults
+        let account_field = std::env::var("PASSKEY_USER_ACCOUNT_FIELD").unwrap_or_else(|_| "name".to_string());
+        let label_field = std::env::var("PASSKEY_USER_LABEL_FIELD").unwrap_or_else(|_| "display_name".to_string());
+        
+        // Map fields based on configuration
+        let account = match account_field.as_str() {
+            "name" => name.clone(),
+            "display_name" => display_name.clone(),
+            _ => name.clone(), // Default to name if invalid mapping
+        };
+        
+        let label = match label_field.as_str() {
+            "name" => name.clone(),
+            "display_name" => display_name.clone(),
+            _ => display_name.clone(), // Default to display_name if invalid mapping
+        };
 
         let new_user = User {
             id: Uuid::new_v4().to_string(),
-            account: name,
-            label: display_name,
+            account,
+            label,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
