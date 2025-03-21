@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::userdb::UserError;
 use crate::utils::UtilError;
 
 #[derive(Debug, Error, Clone)]
@@ -25,4 +26,8 @@ pub enum SessionError {
 
     #[error("Header error: {0}")]
     HeaderError(String),
+
+    /// Error from user database operations
+    #[error("User error: {0}")]
+    User(#[from] UserError),
 }

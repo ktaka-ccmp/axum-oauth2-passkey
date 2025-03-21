@@ -147,6 +147,83 @@ pub fn get_session_id_from_headers(headers: &HeaderMap) -> Result<Option<&str>, 
     Ok(session_id)
 }
 
+/// Check if the request is authenticated by examining the session headers
+///
+/// This function checks if valid session credentials exist in the request headers
+/// without fully loading the user data, making it a lightweight authentication check.
+///
+/// # Arguments
+/// * `headers` - The HTTP headers from the request
+/// * `verify_user_exists` - If true, also checks that the user exists in the database (default: false)
+///
+/// # Returns
+/// * `Result<bool, SessionError>` - True if authenticated, false if not authenticated, or an error
+pub async fn is_authenticated(
+    headers: &HeaderMap,
+    verify_user_exists: bool,
+) -> Result<bool, SessionError> {
+    // Get session ID from headers
+    let Some(session_id) = get_session_id_from_headers(headers)? else {
+        return Ok(false);
+    };
+
+    // Check if the session exists in the store
+    let session_result = GENERIC_CACHE_STORE
+        .lock()
+        .await
+        .get("session", session_id)
+        .await
+        .map_err(|e| SessionError::Storage(e.to_string()))?;
+
+    // let _sessions = GENERIC_CACHE_STORE
+    //     .lock()
+    //     .await
+    //     .gets("session", session_id)
+    //     .await
+    //     .map_err(|e| SessionError::Storage(e.to_string()))?;
+
+    // If no session found, return false
+    let Some(cached_session) = session_result else {
+        return Ok(false);
+    };
+
+    // Convert to StoredSession and check expiration
+    let stored_session: StoredSession = match cached_session.try_into() {
+        Ok(session) => session,
+        Err(_) => return Ok(false),
+    };
+
+    // Check if session has expired
+    if stored_session.info.expires_at < Utc::now() {
+        tracing::debug!("Session expired at {}", stored_session.info.expires_at);
+        return Ok(false);
+    }
+
+    // Optionally check if the user exists in the database
+    if verify_user_exists {
+        let user_exists = UserStore::get_user(&stored_session.info.user_id)
+            .await
+            .map_err(|e| {
+                tracing::error!("Error checking user existence: {}", e);
+                SessionError::from(e)
+            })?
+            .is_some();
+
+        Ok(user_exists)
+    } else {
+        // If we don't need to verify user existence, the session is valid at this point
+        Ok(true)
+    }
+}
+
+pub async fn is_authenticated_basic(headers: &HeaderMap) -> Result<bool, SessionError> {
+    is_authenticated(headers, false).await
+}
+
+pub async fn is_authenticated_strict(headers: &HeaderMap) -> Result<bool, SessionError> {
+    is_authenticated(headers, true).await
+}
+
 #[tracing::instrument]
 pub(crate) async fn renew_session_header(user_id: String) -> Result<HeaderMap, SessionError> {
     // Create session cookie for authentication
